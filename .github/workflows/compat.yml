@@ -19,13 +19,15 @@ jobs:
         node-version: [22]
         os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
+      # Pinned to v6: checkout v7 refuses fork PR code on workflow_run unless
+      # `allow-unsafe-pr-checkout: true` is set.
       - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
 
-      - uses: pnpm/action-setup@v5
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node-version }}
           cache: "pnpm"
