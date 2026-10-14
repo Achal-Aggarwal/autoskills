@@ -86,6 +86,38 @@ export async function printBanner(version: string): Promise<void> {
   log();
 }
 
+// eslint-disable-next-line no-control-regex
+const ANSI_PATTERN = /\x1b\[[0-9;?]*[A-Za-z]/g;
+
+function visibleWidth(text: string): number {
+  return [...text.replace(ANSI_PATTERN, "")].length;
+}
+
+// Cuts a styled line to `width` visible chars so the terminal never wraps it,
+// keeping escape sequences intact.
+function truncateLine(line: string, width: number): string {
+  if (visibleWidth(line) <= width) return line;
+
+  const sequence = new RegExp(ANSI_PATTERN.source, "y");
+  let out = "";
+  let visible = 0;
+  let i = 0;
+  while (i < line.length && visible < width) {
+    sequence.lastIndex = i;
+    const match = sequence.exec(line);
+    if (match) {
+      out += match[0];
+      i += match[0].length;
+      continue;
+    }
+    const ch = String.fromCodePoint(line.codePointAt(i)!);
+    out += ch;
+    visible++;
+    i += ch.length;
+  }
+  return out + "\x1b[0m";
+}
+
 interface MultiSelectOptions<T> {
   labelFn: (item: T, i: number) => string;
   hintFn?: (item: T, i: number) => string;
@@ -111,7 +143,8 @@ export function multiSelect<T>(
       ? initialSelected.slice()
       : Array.from({ length: items.length }, () => true);
     let cursor = 0;
-    let rendered = false;
+    let scrollTop = 0;
+    let renderedLines = 0;
 
     let groupCount = 0;
     if (groupFn) {
@@ -126,63 +159,102 @@ export function multiSelect<T>(
     }
 
     const showGroups = groupCount > 1;
-    const visibleGroupCount = showGroups ? groupCount : 0;
-    const separatorCount = showGroups ? groupCount - 1 : 0;
 
-    function renderedLineCount(): number {
-      return items.length + visibleGroupCount + separatorCount + 1;
-    }
-
+    // Moving the cursor up only works if every drawn line is exactly one
+    // terminal row and the whole frame fits on screen; otherwise each redraw
+    // leaves stale lines behind. So lines are truncated to the terminal width
+    // and the list scrolls when it is taller than the terminal.
     function clearRendered(): void {
-      if (rendered) {
-        write(`\x1b[${renderedLineCount()}A\r\x1b[J`);
-      }
+      if (renderedLines > 1) write(`\x1b[${renderedLines - 1}A`);
+      if (renderedLines > 0) write("\r\x1b[J");
     }
 
     function render(): void {
       clearRendered();
-      rendered = true;
-      draw();
+      const lines = buildLines();
+      write(lines.join("\n"));
+      renderedLines = lines.length;
     }
 
-    function draw(): void {
+    function buildFooter(width: number): string[] {
       const count = selected.filter(Boolean).length;
+      const key = (k: string) => white(bold(`[${k}]`));
+      const parts = [
+        key("↑↓") + dim(" move"),
+        key("space") + dim(" toggle"),
+        key("a") + dim(" all"),
+        ...shortcuts.map((s) => key(s.key) + dim(` ${s.label}`)),
+        key("enter") + dim(` confirm (${count}/${items.length})`),
+      ];
+
+      const lines: string[] = [];
+      let line = "";
+      for (const part of parts) {
+        const candidate = line ? line + dim(" · ") + part : "   " + part;
+        if (line && visibleWidth(candidate) > width) {
+          lines.push(line);
+          line = "   " + part;
+        } else {
+          line = candidate;
+        }
+      }
+      lines.push(line);
+      return lines;
+    }
+
+    function buildLines(): string[] {
+      const width = (process.stdout.columns || Infinity) - 1;
+      const height = process.stdout.rows || Infinity;
+
+      const body: string[] = [];
+      const itemLines: number[] = [];
+      let cursorTop = 0;
       let lastGroup: string | null = null;
       let isFirstGroup = true;
 
       for (let i = 0; i < items.length; i++) {
+        let top = body.length;
         if (showGroups && groupFn) {
           const group = groupFn(items[i]);
           if (group !== lastGroup) {
-            if (!isFirstGroup) write("\n");
+            if (!isFirstGroup) body.push("");
             isFirstGroup = false;
             lastGroup = group;
-            write(`   ${bold(yellow(group))}\n`);
+            top = body.length;
+            body.push(`   ${bold(yellow(group))}`);
           }
         }
+        if (i === cursor) cursorTop = top;
+        itemLines.push(body.length);
+
         const pointer = i === cursor ? cyan("❯") : " ";
         const check = selected[i] ? green("◼") : dim("◻");
         const label = labelFn(items[i], i);
         const hint = hintFn ? hintFn(items[i], i) : "";
-        write(`     ${pointer} ${check} ${label}${hint ? "  " + dim(hint) : ""}\n`);
+        body.push(`     ${pointer} ${check} ${label}${hint ? "  " + dim(hint) : ""}`);
       }
-      write("\n");
-      const shortcutHints = shortcuts
-        .map((s) => white(bold(`[${s.key}]`)) + dim(` ${s.label}`))
-        .join(dim(" · "));
-      const shortcutPart = shortcuts.length > 0 ? shortcutHints + dim(" · ") : "";
-      write(
-        dim("   ") +
-          white(bold("[↑↓]")) +
-          dim(" move · ") +
-          white(bold("[space]")) +
-          dim(" toggle · ") +
-          white(bold("[a]")) +
-          dim(" all · ") +
-          shortcutPart +
-          white(bold("[enter]")) +
-          dim(` confirm (${count}/${items.length})`),
-      );
+
+      const footer = buildFooter(width);
+      const maxBody = Math.max(1, height - footer.length - 1);
+      let visible = body;
+      let spacer = "";
+
+      if (body.length > maxBody) {
+        const cursorLine = itemLines[cursor];
+        scrollTop = Math.min(scrollTop, cursorTop);
+        scrollTop = Math.max(scrollTop, cursorLine - maxBody + 1);
+        scrollTop = Math.max(0, Math.min(scrollTop, body.length - maxBody));
+        visible = body.slice(scrollTop, scrollTop + maxBody);
+
+        const above = itemLines.filter((line) => line < scrollTop).length;
+        const below = itemLines.filter((line) => line >= scrollTop + maxBody).length;
+        const more = [above > 0 && `↑ ${above} more`, below > 0 && `↓ ${below} more`];
+        spacer = dim(`     ${more.filter(Boolean).join(" · ")}`);
+      } else {
+        scrollTop = 0;
+      }
+
+      return [...visible, spacer, ...footer].map((line) => truncateLine(line, width));
     }
 
     write(HIDE_CURSOR);
