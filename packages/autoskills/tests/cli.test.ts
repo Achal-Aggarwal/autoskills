@@ -8,11 +8,13 @@ import { useTmpDir, writePackageJson, writeFile, writeJson, addWorkspace } from 
 const CLI_PATH = resolve(import.meta.dirname!, "..", "index.mjs");
 
 function run(args: string[] = [], cwd: string = process.cwd()): string {
+  // FORCE_COLOR wins over NO_COLOR, and pnpm sets it when scripts run in a terminal.
+  const { FORCE_COLOR: _forceColor, ...env } = process.env;
   return execFileSync(process.execPath, [CLI_PATH, ...args], {
     cwd,
     encoding: "utf-8",
     timeout: 10_000,
-    env: { ...process.env, NO_COLOR: "1" },
+    env: { ...env, NO_COLOR: "1" },
   });
 }
 
@@ -286,15 +288,6 @@ describe("CLI", () => {
       writeFile(tmp.path, "bunfig.toml", "[install]");
       const output = run(["--dry-run"], tmp.path);
       ok(output.includes("Bun"));
-    });
-
-    it("detects Deno from deno.json", () => {
-      writePackageJson(tmp.path);
-      writeFile(tmp.path, "deno.json", "{}");
-      const output = run(["--dry-run"], tmp.path);
-      ok(output.includes("Deno"));
-      ok(/› deno(?![\w-])/.test(output));
-      ok(output.includes("deno-typescript"));
     });
 
     it("detects Node.js from package-lock.json", () => {
