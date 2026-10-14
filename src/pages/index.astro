@@ -1,6 +1,7 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import '../styles/global.css';
+import cliPkg from '../../packages/autoskills/package.json';
 
 // Emitted as hashed files and lazy-loaded: inlining them added ~270 KB to the HTML.
 const iconUrls = import.meta.glob<string>('../icons/*.svg', { query: '?url&no-inline', import: 'default', eager: true });
@@ -75,7 +76,6 @@ try {
 }
 
 const { SKILLS_MAP } = await import('../../packages/autoskills/skills-map.ts');
-const { default: cliPkg } = await import('../../packages/autoskills/package.json', { with: { type: 'json' } });
 const cliVersion = cliPkg.version;
 
 const popularityOrder = [
