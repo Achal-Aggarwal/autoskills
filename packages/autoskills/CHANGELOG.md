@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.4.1](https://github.com/midudev/autoskills/releases/tag/v0.4.1) (2026-10-14)
+
+### 🐛 Bug Fixes
+
+- fix(autoskills): stop multiSelect from duplicating lines on redraw [`cc80891`](https://github.com/midudev/autoskills/commit/cc80891)
+
 ## [0.4.0](https://github.com/midudev/autoskills/releases/tag/v0.4.0) (2026-10-14)
 
 ### ⚠️ Breaking Changes
