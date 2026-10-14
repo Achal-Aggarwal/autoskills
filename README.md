@@ -31,7 +31,7 @@ That's it. No config needed.
 
 `autoskills` does not install directly from random upstream repositories at runtime.
 
-Skills are synced by maintainers into the repository-local autoskills registry, scanned for prompt-injection and supply-chain risks, and recorded with SHA-256 hashes in a manifest. When you run `autoskills`, the CLI downloads only the skills your project needs from that curated registry, verifies every file against the manifest, and writes a `skills-lock.json` entry with the installed source and bundle hash.
+Skills are synced by maintainers into the repository-local autoskills registry, reviewed by AI for prompt-injection and supply-chain attacks (a fast model triages every change and a stronger one decides on anything suspicious), and recorded with SHA-256 hashes in a manifest. Skills that are safe but worth a heads-up are shown with a security warning before you install them. When you run `autoskills`, the CLI downloads only the skills your project needs from that curated registry, verifies every file against the manifest, and writes a `skills-lock.json` entry with the installed source and bundle hash.
 
 This keeps the package small while avoiding live downloads from third-party skill sources during installation.
 
@@ -40,8 +40,13 @@ This keeps the package small while avoiding live downloads from third-party skil
 ```
 -y, --yes       Skip confirmation prompt
 --dry-run       Show what would be installed without installing
+--clear-cache   Clear the downloaded skills cache
+-a, --agent     Install for specific IDEs only (e.g. cursor claude-code)
+-v, --verbose   Show install trace and error details
 -h, --help      Show help message
 ```
+
+Run `npx autoskills ui` to browse the skills installed in your project in a local web desk.
 
 ## Supported Technologies
 
@@ -60,7 +65,7 @@ Built to work across modern frontend, backend, mobile, cloud, and media stacks.
 
 ## Requirements
 
-Node.js >= 22
+Node.js >= 22.6
 
 ## License
 

@@ -36,18 +36,30 @@ npx autoskills -y
 npx autoskills --dry-run
 ```
 
+### Browse installed skills
+
+```bash
+npx autoskills ui
+```
+
+Opens a local desk (bound to `127.0.0.1`) to browse the skills installed in the current project.
+
 ### Claude Code summary
 
 If `claude-code` is auto-detected or passed with `-a`, `autoskills` writes a `CLAUDE.md` file in your project root summarizing the markdown files installed under `.claude/skills`.
 
 ## Options
 
-| Flag              | Description                                           |
-| ----------------- | ----------------------------------------------------- |
-| `-y`, `--yes`     | Skip confirmation prompt, install all detected skills |
-| `--dry-run`       | Show detected skills without installing anything      |
-| `-v`, `--verbose` | Show install trace and error details                  |
-| `-h`, `--help`    | Show help message                                     |
+| Flag              | Description                                                |
+| ----------------- | ---------------------------------------------------------- |
+| `-y`, `--yes`     | Skip confirmation prompt, install all detected skills      |
+| `--dry-run`       | Show detected skills without installing anything           |
+| `--clear-cache`   | Clear the downloaded skills cache                          |
+| `-a`, `--agent`   | Install for specific IDEs only (e.g. `cursor claude-code`) |
+| `-v`, `--verbose` | Show install trace and error details                       |
+| `-h`, `--help`    | Show help message                                          |
+
+`autoskills ui` also accepts `--port <number>` and `--no-open`.
 
 ## Supported Technologies
 
@@ -165,7 +177,6 @@ When multiple technologies are used together, `autoskills` detects **technology 
 - **Next.js + Playwright** — E2E testing best practices for Next.js
 - **React + shadcn/ui** — shadcn component patterns with React
 - **Tailwind CSS + shadcn/ui** — Tailwind v4 + shadcn integration
-- **Expo + Tailwind CSS** — Tailwind setup for Expo
 - **React Native + Expo** — Native UI patterns
 - **React Hook Form + Zod** — Form validation patterns with Zod schemas
 - **GSAP + React** — GSAP animation patterns in React
@@ -174,13 +185,13 @@ When multiple technologies are used together, `autoskills` detects **technology 
 
 ## How It Works
 
-`autoskills` uses [skills.sh](https://skills.sh) under the hood — the open skill registry for AI coding agents. Skills are markdown files that teach AI assistants how to work with specific technologies, following best practices and patterns from the official maintainers.
+Skills are markdown files that teach AI assistants how to work with specific technologies, following best practices and patterns from the official maintainers. `autoskills` installs them from its own curated registry: maintainers sync them from their upstream repositories (the ones listed on [skills.sh](https://skills.sh)), an AI security review blocks anything that attacks the user or plants a serious vulnerability, and every file is recorded with a SHA-256 hash that the CLI verifies before writing it.
 
 The detection runs entirely locally with zero network requests until installation begins.
 
 ## Requirements
 
-- Node.js >= 22.0.0
+- Node.js >= 22.6.0
 
 ## License
 
