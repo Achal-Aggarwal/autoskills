@@ -30,6 +30,16 @@ kubectl run netdebug --image=curlimages/curl -it --rm -n <ns> -- \
 
 Pods that are running but not Ready are removed from Endpoints. Check `kubectl get pod <pod> -n <ns>`.
 
+**Deep diagnostics with Inspektor Gadget** (when the above checks are inconclusive):
+
+Use [`scripts/run-ig.sh`](references/inspektor-gadget.md) (or `run-ig.ps1`) with `--pod <pod-name> --ns <ns>` and these gadgets:
+
+- `snapshot_socket` — check what ports the pod is listening on
+- `trace_tcp` — trace connect/accept/close events
+- `trace_tcpretrans` — packet retransmissions
+
+See [references/inspektor-gadget.md](references/inspektor-gadget.md).
+
 ---
 
 ## DNS Resolution Failures
@@ -68,6 +78,12 @@ kubectl get svc kube-dns -n kube-system -o jsonpath='{.spec.clusterIP}'
 ```
 
 Custom VNet DNS must forward `.cluster.local` to the CoreDNS ClusterIP and other lookups to `168.63.129.16`.
+
+**Deep diagnostics with Inspektor Gadget** (when the above checks are inconclusive):
+
+Use [`scripts/run-ig.sh`](references/inspektor-gadget.md) (or `run-ig.ps1`) with `--pod <pod-name> --ns <ns>` and `trace_dns`. Key signals: `rcode=3` (NXDOMAIN), `rcode=2` (SERVFAIL), high `latency` values, queries going to unexpected destinations.
+
+See [references/inspektor-gadget.md](references/inspektor-gadget.md).
 
 ---
 

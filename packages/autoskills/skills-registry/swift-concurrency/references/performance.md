@@ -271,9 +271,37 @@ if Task.isCancelled {
 }
 ```
 
-### 5. Keep delay work off the main actor
+### 5. Match Task entry isolation to its synchronous prefix
 
-If the task only needs the main actor for the final mutation, do not start the whole retry flow on `@MainActor`.
+For unstructured `Task { ... }`, decide startup isolation from the synchronous prefix (everything before the first `await`). If that prefix needs main-actor access, keep inherited `@MainActor` entry. If the prefix does not need main actor, use `Task { @concurrent in ... }` and hop back with `MainActor.run` only when UI-owned mutation is required. A trivial non-main line (such as `print`) does **not** justify `@concurrent` when main-actor work already exists in the same prefix.
+
+```swift
+// ❌ Synchronous prefix is empty; first work hops away
+Task {
+    await hopToOtherIsolationDomain()
+}
+
+// ❌ Synchronous prefix is only `print` (trivial, non-main); first await hops away
+Task {
+    print("Also not main-thread-bound")
+    await hopToOtherIsolationDomain()
+}
+
+// ✅ Start off the main actor, hop back only for UI work
+Task { @concurrent in
+    await hopToOtherIsolationDomain()
+    await MainActor.run { updateUI() }
+}
+
+// ✅ Synchronous prefix DOES contain main-actor work — keep inheritance
+Task {
+    print("debug")              // trivial, non-main — rides along
+    self.isLoading = true       // needs @MainActor, before any await
+    await fetchData()
+}
+```
+
+Delayed retry is one specialization of this rule:
 
 ```swift
 // ❌ Can wait for MainActor, then suspend immediately
@@ -285,7 +313,7 @@ registrationRetryTask = Task { @MainActor [weak self] in
 }
 ```
 
-The delay itself is not UI work. Starting on `@MainActor` can add an avoidable executor wait before the task reaches `Task.sleep`, especially when the task is scheduled from another executor or while the main actor is busy.
+The delay itself is not UI work. Starting on `@MainActor` can add an avoidable executor wait before reaching `Task.sleep`, especially when scheduled from another executor or while the main actor is busy.
 
 ```swift
 // ✅ Sleep off-main, hop back only for the UI-owned work
@@ -304,7 +332,7 @@ registrationRetryTask = Task { @concurrent [weak self] in
 }
 ```
 
-Use this pattern for delayed retries, backoff, and timer-like work where only the final state change is UI-owned.
+Use this rule for any unstructured task: delayed retries, backoff, timer-like work, off-main computation, and actor hops. The key check is always “what runs before the first `await`?”, not “what does the task eventually do?”.
 
 ### 6. Embrace parallelism
 
@@ -514,6 +542,10 @@ Before optimizing, ask:
 - [ ] Are suspensions necessary?
 - [ ] Does UX require background work?
 - [ ] Will this scale with data?
+
+Anti-patterns to avoid with unstructured tasks:
+- Starting on inherited `@MainActor` when nothing in the synchronous prefix (before first `await`) needs main actor.
+- Moving trivial non-main lines off `@MainActor` when the same synchronous prefix already includes required main-actor mutation.
 
 ## Common Patterns
 

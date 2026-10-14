@@ -1,5 +1,14 @@
 # Container Apps Troubleshooting
 
+> **Request to "collect"/"gather" diagnostics?** Once the app name and resource
+> group are known from the request or existing context, run the
+> [`containerapp-diagnostics`](../../scripts/containerapp-diagnostics.sh) script
+> ([PowerShell](../../scripts/containerapp-diagnostics.ps1)) directly as your first action —
+> don't verify the app/resource group exists with separate calls first, and don't substitute
+> the individual commands below for it. It's read-only and reports clearly if the
+> resource can't be found. Ask only for identifiers that remain missing. See "Get All
+> Diagnostic Info" below for usage.
+
 ### Common Issues Matrix
 
 | Symptom | Likely Cause | Quick Fix |
@@ -95,11 +104,15 @@ az containerapp logs show --name APP -g RG --type system
 
 ### Get All Diagnostic Info
 
+Use the [`containerapp-diagnostics`](../../scripts/containerapp-diagnostics.sh) script
+([PowerShell](../../scripts/containerapp-diagnostics.ps1)) to collect everything in one
+call. It prints clearly labeled sections — revisions, registry config, ingress config, and
+recent logs — and a summary line describing what it collected. Interpreting the output
+remains your job.
+
+```powershell
+..\..\scripts\containerapp-diagnostics.ps1 -Name <app> -ResourceGroup <rg>
+```
 ```bash
-# Combined diagnostic command
-echo "=== Container App Diagnostics ===" && \
-echo "Revisions:" && az containerapp revision list --name APP -g RG -o table && \
-echo "Registry Config:" && az containerapp show --name APP -g RG --query "properties.configuration.registries" && \
-echo "Ingress Config:" && az containerapp show --name APP -g RG --query "properties.configuration.ingress" && \
-echo "Recent Logs:" && az containerapp logs show --name APP -g RG --tail 20
+../../scripts/containerapp-diagnostics.sh --name <app> --resource-group <rg>
 ```

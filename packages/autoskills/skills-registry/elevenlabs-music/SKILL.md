@@ -4,6 +4,8 @@ description: "ElevenLabs AI music generation - create original music from text p
 allowed-tools: Bash(belt *)
 ---
 
+> **Install the belt CLI skill:** `npx skills add belt-sh/cli`
+
 # ElevenLabs Music Generation
 
 Generate original music from text prompts via [inference.sh](https://inference.sh) CLI.
@@ -156,10 +158,11 @@ belt app run elevenlabs/tts --input '{
   "voice": "george"
 }' > voice.json
 
-# 3. Merge together
-belt app run infsh/media-merger --input '{
-  "media": ["<music-url>", "<voice-url>"]
-}'
+# 3. Mix together (no inference.sh app mixes audio; use ffmpeg locally)
+curl -L -o music.mp3 "<music-url>"
+curl -L -o voice.mp3 "<voice-url>"
+ffmpeg -i voice.mp3 -i music.mp3 -filter_complex \
+  "[1]volume=0.2[bg];[0][bg]amix=inputs=2:duration=first" mixed.mp3
 ```
 
 ## Use Cases
@@ -184,7 +187,7 @@ npx skills add inference-sh/skills@elevenlabs-tts
 # Other music models (Diffrythm, Tencent)
 npx skills add inference-sh/skills@ai-music-generation
 
-# Full platform skill (all 250+ apps)
+# Full platform skill (all apps)
 npx skills add inference-sh/skills@infsh-cli
 ```
 
