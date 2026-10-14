@@ -51,16 +51,20 @@ process.on("SIGINT", () => {
 // ── CLI ──────────────────────────────────────────────────────
 
 interface CliArgs {
+  command: string | null;
   autoYes: boolean;
   dryRun: boolean;
   verbose: boolean;
   help: boolean;
   clearCache: boolean;
   agents: string[];
+  port: number | null;
+  noOpen: boolean;
 }
 
 function parseArgs(): CliArgs {
   const args = process.argv.slice(2);
+  const command = args[0] && !args[0].startsWith("-") ? args[0] : null;
   const agents: string[] = [];
   const agentIdx = args.findIndex((a) => a === "-a" || a === "--agent");
   if (agentIdx !== -1) {
@@ -69,13 +73,18 @@ function parseArgs(): CliArgs {
       agents.push(args[i]);
     }
   }
+  const portIdx = args.findIndex((a) => a === "-p" || a === "--port");
+  const portValue = portIdx !== -1 ? Number(args[portIdx + 1]) : NaN;
   return {
+    command,
     autoYes: args.includes("-y") || args.includes("--yes"),
     dryRun: args.includes("--dry-run"),
     verbose: args.includes("--verbose") || args.includes("-v"),
     help: args.includes("--help") || args.includes("-h"),
     clearCache: args.includes("--clear-cache"),
     agents,
+    port: Number.isInteger(portValue) && portValue > 0 ? portValue : null,
+    noOpen: args.includes("--no-open") || process.env.AUTOSKILLS_UI_NO_OPEN === "1",
   };
 }
 
@@ -85,6 +94,7 @@ function showHelp(): void {
 
   ${bold("Usage:")}
     npx autoskills                   Detect & install skills
+    npx autoskills ${dim("ui")}                  Browse installed skills locally
     npx autoskills ${dim("-y")}                   Skip confirmation
     npx autoskills ${dim("--dry-run")}            Show what would be installed
     npx autoskills ${dim("--clear-cache")}        Clear downloaded skills cache
@@ -97,6 +107,11 @@ function showHelp(): void {
     -v, --verbose   Show install trace and error details
     -a, --agent     Install for specific IDEs only (e.g. cursor, claude-code)
     -h, --help      Show this help message
+
+  ${bold("UI:")}
+    npx autoskills ui                Open the local skills desk
+    npx autoskills ui ${dim("--port 4000")}     Use a custom port
+    npx autoskills ui ${dim("--no-open")}       Do not open the browser
 `);
 }
 
@@ -500,11 +515,27 @@ async function selectSkills(skills: SkillEntry[], autoYes: boolean): Promise<Ski
 // ── Main ─────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  const { autoYes, dryRun, verbose, help, clearCache, agents } = parseArgs();
+  const { command, autoYes, dryRun, verbose, help, clearCache, agents, port, noOpen } = parseArgs();
+
+  if (command && command !== "ui") {
+    log(yellow(`   Unknown command: ${command}`));
+    showHelp();
+    process.exit(1);
+  }
 
   if (help) {
     showHelp();
     process.exit(0);
+  }
+
+  if (command === "ui") {
+    const { runDesk } = await import("./desk.ts");
+    await runDesk({
+      projectDir: resolve("."),
+      port: port ?? undefined,
+      open: !noOpen,
+    });
+    return;
   }
 
   if (clearCache) {
