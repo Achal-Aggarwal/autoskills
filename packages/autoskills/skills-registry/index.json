@@ -1828,32 +1828,6 @@
         "checkedAt": "2026-10-14T11:41:37.827Z"
       }
     },
-    "deno-typescript": {
-      "source": "mindrally/skills",
-      "skillPath": "mindrally/skills/deno-typescript",
-      "commitSha": "7682ca77710e0971eab4e0ae5dddfa281aea0ba5",
-      "files": [
-        "SKILL.md"
-      ],
-      "sha256": {
-        "SKILL.md": "4bb6ce1bc96a65562911f32c14a21a30bcec0ce1b3a34c4423d67ac564537fc1"
-      },
-      "bundleHash": "4150790699d37e0775c7414d29eae8c6b3cc803cc0bebab94f0eb6fa236062e6",
-      "review": {
-        "status": "approved",
-        "flags": [],
-        "summary": "The skill is an on-topic Deno/TypeScript development guide with no prompt injection, embedded secrets, hidden characters, or unconditional destructive commands, and its external URLs (deno.land, jsr.io, the declared source repo) are standard for the domain.",
-        "model": "claude-haiku-5-5",
-        "promptVersion": "1.0.0",
-        "reviewedAt": "2026-10-14T11:41:40.904Z"
-      },
-      "securityCheck": {
-        "status": "ok",
-        "findings": [],
-        "summary": "The skill is an on-topic Deno/TypeScript development guide with no prompt injection, embedded secrets, hidden characters, or unconditional destructive commands, and its external URLs (deno.land, jsr.io, the declared source repo) are standard for the domain.",
-        "checkedAt": "2026-10-14T11:41:40.904Z"
-      }
-    },
     "fastapi-python": {
       "source": "mindrally/skills",
       "skillPath": "mindrally/skills/fastapi-python",
@@ -4260,104 +4234,6 @@
         "findings": [],
         "summary": "Benign, on-topic Python best-practices guide with no prompt injection, secrets, suspicious URLs, hidden characters, or destructive commands; the only shell-like content is standard linting and audit tooling shown as examples.",
         "checkedAt": "2026-10-14T11:45:19.208Z"
-      }
-    },
-    "deno-frontend": {
-      "source": "denoland/skills",
-      "skillPath": "denoland/skills/deno-frontend",
-      "commitSha": "d5f6ace6b113aee71ba5286612fa1bde34c7d102",
-      "files": [
-        "SKILL.md",
-        "references/FRESH.md",
-        "references/FRESH_MIGRATION.md"
-      ],
-      "sha256": {
-        "SKILL.md": "6a7c81d580f92289d273e775c062dd965a7323f35eb45eb0979ea23b2d4ce665",
-        "references/FRESH.md": "aa0dded31e8d860d11971b13717ac285b23fb7f4443caa02ee580671ef0930c1",
-        "references/FRESH_MIGRATION.md": "907cd68de5c776be439d93bb5600218749934153583b9ce45f815b3c004c1683"
-      },
-      "bundleHash": "aa83fd8d7938386b5f0b70cf378ca27709271728e4c88860923ac793f1e62baa",
-      "review": {
-        "status": "approved",
-        "flags": [],
-        "summary": "Documentation-only skill for Deno frontend development covering npm frameworks and Fresh 2.x, with no prompt injection, embedded secrets, hidden content, or destructive commands; the only external URLs point to the official Fresh docs and the content is on-topic.",
-        "model": "claude-haiku-5-5",
-        "promptVersion": "1.0.0",
-        "reviewedAt": "2026-10-14T11:45:22.336Z"
-      },
-      "securityCheck": {
-        "status": "ok",
-        "findings": [],
-        "summary": "Documentation-only skill for Deno frontend development covering npm frameworks and Fresh 2.x, with no prompt injection, embedded secrets, hidden content, or destructive commands; the only external URLs point to the official Fresh docs and the content is on-topic.",
-        "checkedAt": "2026-10-14T11:45:22.336Z"
-      }
-    },
-    "deno-deploy": {
-      "source": "denoland/skills",
-      "skillPath": "denoland/skills/deno-deploy",
-      "commitSha": "d5f6ace6b113aee71ba5286612fa1bde34c7d102",
-      "files": [
-        "SKILL.md",
-        "references/AUTHENTICATION.md",
-        "references/DATABASES.md",
-        "references/DENO_KV.md",
-        "references/DOMAINS.md",
-        "references/FRAMEWORKS.md",
-        "references/ORGANIZATIONS.md",
-        "references/RUNTIME.md",
-        "references/TROUBLESHOOTING.md"
-      ],
-      "sha256": {
-        "SKILL.md": "442b0753a354f1324b60f52b39200de7a1a4016d7d9be0050ce54525fe93601f",
-        "references/AUTHENTICATION.md": "9fad51143bf773c605229408c8f009979ae9ae3e4c7e39f6aac034316e57fe8d",
-        "references/DATABASES.md": "fc2a94d2cceb2e2b8df67853a45a34f3f73f0b3e1f5f4f99f5cb031396ef4a91",
-        "references/DENO_KV.md": "ac9d922e5fb43c1616f542dbfb3dc465f89106bf282c2992fdc1eabef4f7ecdb",
-        "references/DOMAINS.md": "26ef5cd17d5140255292b7263b817e57f99f6a270370feed5d6e5844edc91647",
-        "references/FRAMEWORKS.md": "769a925d13247e8a203ae1022c10223bd7215f5b6a06e012e3651e4116b58fb8",
-        "references/ORGANIZATIONS.md": "484b074cbd06fac5a70547c4848730bd6523d11fabac5cb2767e630958ea01b0",
-        "references/RUNTIME.md": "6ca74a4373c26d9fd87260b3c0d998b5dbaa33359c50c1e5e86622a86826a74b",
-        "references/TROUBLESHOOTING.md": "6c3e89d8552806b37fe2a5b4a99e254e6e53642012f07c5689e0b89649609fcd"
-      },
-      "bundleHash": "b99b6ddf7ed676d66aac0ac84e671efec102c9871712d7f69d2a9f01b5d77dcd",
-      "review": {
-        "status": "approved",
-        "flags": [],
-        "summary": "This is ordinary Deno Deploy CLI documentation from the denoland publisher; its tunnel telemetry and env-var sync are disclosed, and there are no hidden, obfuscated, or security-disabling instructions.",
-        "model": "claude-haiku-5-5",
-        "promptVersion": "2.0.0",
-        "reviewedAt": "2026-10-14T12:36:34.695Z"
-      },
-      "securityCheck": {
-        "status": "ok",
-        "findings": [],
-        "summary": "This is ordinary Deno Deploy CLI documentation from the denoland publisher; its tunnel telemetry and env-var sync are disclosed, and there are no hidden, obfuscated, or security-disabling instructions.",
-        "checkedAt": "2026-10-14T12:36:34.695Z"
-      }
-    },
-    "deno-sandbox": {
-      "source": "denoland/skills",
-      "skillPath": "denoland/skills/deno-sandbox",
-      "commitSha": "d5f6ace6b113aee71ba5286612fa1bde34c7d102",
-      "files": [
-        "SKILL.md"
-      ],
-      "sha256": {
-        "SKILL.md": "654d72b18a7b3bc1db3a85ce0978f03319bc75315dadc34f31bc407b0a7aaa7f"
-      },
-      "bundleHash": "9f8418b480e2fac9d3b96dcb77a0a1c50ed6fb943b9383f356455e7af1ab2fb6",
-      "review": {
-        "status": "approved",
-        "flags": [],
-        "summary": "The deno-sandbox skill is ordinary developer documentation for the @deno/sandbox SDK with safe patterns such as restricted permissions, timeouts and disposal, and contains no injection, exfiltration or hidden content.",
-        "model": "claude-haiku-5-5",
-        "promptVersion": "2.0.0",
-        "reviewedAt": "2026-10-14T12:35:33.118Z"
-      },
-      "securityCheck": {
-        "status": "ok",
-        "findings": [],
-        "summary": "The deno-sandbox skill is ordinary developer documentation for the @deno/sandbox SDK with safe patterns such as restricted permissions, timeouts and disposal, and contains no injection, exfiltration or hidden content.",
-        "checkedAt": "2026-10-14T12:35:33.118Z"
       }
     },
     "wp-plugin-development": {
@@ -13522,34 +13398,6 @@
         "findings": [],
         "summary": "The skill is ordinary ElysiaJS developer documentation with no prompt injection, hidden content, exfiltration, or deceptive instructions; the only sensitive-looking item is placeholder SMTP credentials in react-email.md, which are low risk.",
         "checkedAt": "2026-10-14T12:35:06.580Z"
-      }
-    },
-    "deno": {
-      "source": "denoland/skills",
-      "skillPath": "denoland/skills/deno",
-      "commitSha": "d5f6ace6b113aee71ba5286612fa1bde34c7d102",
-      "files": [
-        "SKILL.md",
-        "references/CLI.md"
-      ],
-      "sha256": {
-        "SKILL.md": "96bcaefb9ec0b388fcf0fbffbc7aa5d566860076f706ab3972f7f5fc59494527",
-        "references/CLI.md": "d95e2b119f2de24c9962092a38abdb1565b93c0a2d78e42d883d097cec62b276"
-      },
-      "bundleHash": "b476203ee8f238a114476108b9c472381b15a1b75b89492f20d09f0feee262c8",
-      "review": {
-        "status": "approved",
-        "flags": [],
-        "summary": "The skill is ordinary Deno developer documentation covering dependency management, permissions, tooling and publishing, with no hidden content, exfiltration, or instructions aimed at the agent or reviewer.",
-        "model": "claude-haiku-5-5",
-        "promptVersion": "2.0.0",
-        "reviewedAt": "2026-10-14T12:35:32.976Z"
-      },
-      "securityCheck": {
-        "status": "ok",
-        "findings": [],
-        "summary": "The skill is ordinary Deno developer documentation covering dependency management, permissions, tooling and publishing, with no hidden content, exfiltration, or instructions aimed at the agent or reviewer.",
-        "checkedAt": "2026-10-14T12:35:32.976Z"
       }
     }
   }

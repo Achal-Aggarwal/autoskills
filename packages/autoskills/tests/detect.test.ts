@@ -4,8 +4,6 @@ import {
   getAllPackageNames,
   readPackageJson,
   readGemfile,
-  readDenoJson,
-  getDenoImportNames,
   detectTechnologies,
   detectCombos,
   parseSettingsGradleModules,
@@ -1160,43 +1158,6 @@ plugins {
     ok(!ids.includes("flutter"), "Flutter should not be detected");
   });
 
-  it("detects React from deno.json npm: import", () => {
-    writeJson(tmp.path, "deno.json", {
-      imports: { react: "npm:react@^19", "react-dom": "npm:react-dom@^19" },
-    });
-    const { detected } = detectTechnologies(tmp.path);
-    ok(detected.some((t) => t.id === "react"));
-  });
-
-  it("detects Hono from deno.json npm: import", () => {
-    writeJson(tmp.path, "deno.json", { imports: { hono: "npm:hono@^4" } });
-    const { detected } = detectTechnologies(tmp.path);
-    ok(detected.some((t) => t.id === "hono"));
-  });
-
-  it("detects Supabase from deno.json npm: scoped import", () => {
-    writeJson(tmp.path, "deno.json", {
-      imports: { "@supabase/supabase-js": "npm:@supabase/supabase-js@^2" },
-    });
-    const { detected } = detectTechnologies(tmp.path);
-    ok(detected.some((t) => t.id === "supabase"));
-  });
-
-  it("detects frontend from deno.json imports", () => {
-    writeJson(tmp.path, "deno.json", { imports: { react: "npm:react@^19" } });
-    const { isFrontend } = detectTechnologies(tmp.path);
-    strictEqual(isFrontend, true);
-  });
-
-  it("merges package.json and deno.json dependencies", () => {
-    writePackageJson(tmp.path, { dependencies: { next: "^15" } });
-    writeJson(tmp.path, "deno.json", { imports: { react: "npm:react@^19" } });
-    const { detected } = detectTechnologies(tmp.path);
-    const ids = detected.map((t) => t.id);
-    ok(ids.includes("nextjs"));
-    ok(ids.includes("react"));
-  });
-
   it("detects react-router-clerk combo end-to-end", () => {
     writePackageJson(tmp.path, {
       dependencies: { "react-router": "^7.0.0", "@clerk/react-router": "^1.0.0" },
@@ -1294,89 +1255,6 @@ plugins {
     ok(terraform.skills.includes("hashicorp/agent-skills/refactor-module"));
     ok(terraform.skills.includes("hashicorp/agent-skills/terraform-stacks"));
     ok(terraform.skills.includes("wshobson/agents/terraform-module-library"));
-  });
-});
-
-// ── readDenoJson ──────────────────────────────────────────────
-
-describe("readDenoJson", () => {
-  const tmp = useTmpDir();
-
-  it("returns null when no deno.json exists", () => {
-    strictEqual(readDenoJson(tmp.path), null);
-  });
-
-  it("parses valid deno.json", () => {
-    const data = { imports: { "@std/path": "jsr:@std/path@^1" } };
-    writeJson(tmp.path, "deno.json", data);
-    deepStrictEqual(readDenoJson(tmp.path), data);
-  });
-
-  it("parses deno.jsonc when deno.json is absent", () => {
-    const data = { imports: { hono: "npm:hono@^4" } };
-    writeJson(tmp.path, "deno.jsonc", data);
-    deepStrictEqual(readDenoJson(tmp.path), data);
-  });
-
-  it("prefers deno.json over deno.jsonc", () => {
-    writeJson(tmp.path, "deno.json", { from: "json" });
-    writeJson(tmp.path, "deno.jsonc", { from: "jsonc" });
-    deepStrictEqual(readDenoJson(tmp.path), { from: "json" });
-  });
-
-  it("returns null for invalid JSON", () => {
-    writeFile(tmp.path, "deno.json", "{ not valid }");
-    strictEqual(readDenoJson(tmp.path), null);
-  });
-});
-
-// ── getDenoImportNames ────────────────────────────────────────
-
-describe("getDenoImportNames", () => {
-  it("returns empty array for null input", () => {
-    deepStrictEqual(getDenoImportNames(null), []);
-  });
-
-  it("returns empty array when no imports field", () => {
-    deepStrictEqual(getDenoImportNames({}), []);
-  });
-
-  it("extracts npm: prefixed packages", () => {
-    const result = getDenoImportNames({ imports: { express: "npm:express@^4" } });
-    deepStrictEqual(result, ["express"]);
-  });
-
-  it("extracts jsr: prefixed packages", () => {
-    const result = getDenoImportNames({ imports: { "@std/path": "jsr:@std/path@^1" } });
-    deepStrictEqual(result, ["@std/path"]);
-  });
-
-  it("handles scoped npm packages", () => {
-    const result = getDenoImportNames({
-      imports: { "@supabase/supabase-js": "npm:@supabase/supabase-js@^2" },
-    });
-    deepStrictEqual(result, ["@supabase/supabase-js"]);
-  });
-
-  it("skips non-npm/jsr specifiers", () => {
-    const result = getDenoImportNames({
-      imports: {
-        react: "npm:react@^19",
-        local: "./local.ts",
-        remote: "https://deno.land/x/mod@v1/mod.ts",
-      },
-    });
-    deepStrictEqual(result, ["react"]);
-  });
-
-  it("handles multiple imports", () => {
-    const result = getDenoImportNames({
-      imports: { react: "npm:react@^19", hono: "npm:hono@^4", "@std/fs": "jsr:@std/fs@^1" },
-    });
-    ok(result.includes("react"));
-    ok(result.includes("hono"));
-    ok(result.includes("@std/fs"));
-    strictEqual(result.length, 3);
   });
 });
 

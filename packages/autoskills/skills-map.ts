@@ -632,20 +632,6 @@ export const SKILLS_MAP: Technology[] = [
     ],
   },
   {
-    id: "deno",
-    name: "Deno",
-    detect: {
-      configFiles: ["deno.json", "deno.jsonc", "deno.lock"],
-    },
-    skills: [
-      "denoland/skills/deno",
-      "denoland/skills/deno-frontend",
-      "denoland/skills/deno-deploy",
-      "denoland/skills/deno-sandbox",
-      "mindrally/skills/deno-typescript",
-    ],
-  },
-  {
     id: "wordpress",
     name: "WordPress",
     detect: {

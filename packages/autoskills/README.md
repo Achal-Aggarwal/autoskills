@@ -106,7 +106,6 @@ If `claude-code` is auto-detected or passed with `-a`, `autoskills` writes a `CL
 | TypeScript | `typescript` package or `tsconfig.json`                      |
 | Node.js    | `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `.nvmrc` |
 | Bun        | `bun.lockb`, `bun.lock`, `bunfig.toml`                       |
-| Deno       | `deno.json`, `deno.jsonc`, `deno.lock`                       |
 | Dart       | `pubspec.yaml`                                               |
 | Go         | `go.mod`, `go.work`                                          |
 | Vite       | `vite` package or `vite.config.*`                            |

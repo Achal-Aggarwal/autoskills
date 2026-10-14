@@ -307,21 +307,13 @@ function expandWorkspacePatterns(projectDir: string, patterns: string[]): string
         if (!entry.isDirectory() || SCAN_SKIP_DIRS.has(entry.name) || entry.name.startsWith("."))
           continue;
         const wsDir = join(parent, entry.name);
-        if (
-          existsSync(join(wsDir, "package.json")) ||
-          existsSync(join(wsDir, "deno.json")) ||
-          existsSync(join(wsDir, "deno.jsonc"))
-        ) {
+        if (existsSync(join(wsDir, "package.json"))) {
           dirs.push(wsDir);
         }
       }
     } else {
       const wsDir = join(projectDir, pattern);
-      if (
-        existsSync(join(wsDir, "package.json")) ||
-        existsSync(join(wsDir, "deno.json")) ||
-        existsSync(join(wsDir, "deno.jsonc"))
-      ) {
+      if (existsSync(join(wsDir, "package.json"))) {
         dirs.push(wsDir);
       }
     }
@@ -332,7 +324,6 @@ function expandWorkspacePatterns(projectDir: string, patterns: string[]): string
 
 interface PreloadedManifests {
   pkg?: Record<string, unknown> | null;
-  denoJson?: Record<string, unknown> | null;
 }
 
 export function resolveWorkspaces(projectDir: string, preloaded?: PreloadedManifests): string[] {
@@ -359,17 +350,6 @@ export function resolveWorkspaces(projectDir: string, preloaded?: PreloadedManif
         : null;
     if (patterns && patterns.length > 0) {
       return expandWorkspacePatterns(projectDir, patterns).filter(
-        (d) => resolve(d) !== resolve(projectDir),
-      );
-    }
-  }
-
-  const denoJson =
-    preloaded?.denoJson !== undefined ? preloaded.denoJson : readDenoJson(projectDir);
-  if (denoJson?.workspace) {
-    const members = Array.isArray(denoJson.workspace) ? (denoJson.workspace as string[]) : [];
-    if (members.length > 0) {
-      return expandWorkspacePatterns(projectDir, members).filter(
         (d) => resolve(d) !== resolve(projectDir),
       );
     }
@@ -406,30 +386,6 @@ export function readPackageJson(dir: string): Record<string, unknown> | null {
   }
 }
 
-export function readDenoJson(dir: string): Record<string, unknown> | null {
-  for (const name of ["deno.json", "deno.jsonc"]) {
-    try {
-      return JSON.parse(readFileSync(join(dir, name), "utf-8"));
-    } catch {
-      continue;
-    }
-  }
-  return null;
-}
-
-export function getDenoImportNames(denoJson: Record<string, unknown> | null): string[] {
-  if (!denoJson?.imports) return [];
-  return Object.values(denoJson.imports as Record<string, string>)
-    .filter((s) => typeof s === "string" && (s.startsWith("npm:") || s.startsWith("jsr:")))
-    .map((specifier) => {
-      const bare = specifier.replace(/^(?:npm|jsr):/, "");
-      if (bare.startsWith("@")) {
-        return bare.replace(/^(@[^/]+\/[^@]+).*$/, "$1");
-      }
-      return bare.replace(/@.*$/, "");
-    });
-}
-
 export function getAllPackageNames(pkg: Record<string, unknown> | null): string[] {
   if (!pkg) return [];
 
@@ -442,7 +398,6 @@ export function getAllPackageNames(pkg: Record<string, unknown> | null): string[
 interface DetectInDirOptions {
   skipFrontendFiles?: boolean;
   pkg?: Record<string, unknown> | null;
-  denoJson?: Record<string, unknown> | null;
 }
 
 interface DetectInDirResult {
@@ -453,19 +408,11 @@ interface DetectInDirResult {
 
 function detectTechnologiesInDir(
   dir: string,
-  {
-    skipFrontendFiles = false,
-    pkg: preloadedPkg,
-    denoJson: preloadedDeno,
-  }: DetectInDirOptions = {},
+  { skipFrontendFiles = false, pkg: preloadedPkg }: DetectInDirOptions = {},
 ): DetectInDirResult {
   const pkg = preloadedPkg !== undefined ? preloadedPkg : readPackageJson(dir);
-  const allPackages = getAllPackageNames(pkg);
-  const deno = preloadedDeno !== undefined ? preloadedDeno : readDenoJson(dir);
-  const denoImports = getDenoImportNames(deno);
-  const allDepsSet =
-    denoImports.length > 0 ? new Set([...allPackages, ...denoImports]) : new Set(allPackages);
-  const allDepsArray = denoImports.length > 0 ? [...allDepsSet] : allPackages;
+  const allDepsArray = getAllPackageNames(pkg);
+  const allDepsSet = new Set(allDepsArray);
   let gemNames: string[] | undefined;
   const detected: Technology[] = [];
   const fileContentCache = new Map<string, string | null>();
@@ -559,12 +506,11 @@ export interface DetectResult {
 
 export function detectTechnologies(projectDir: string): DetectResult {
   const pkg = readPackageJson(projectDir);
-  const denoJson = readDenoJson(projectDir);
-  const root = detectTechnologiesInDir(projectDir, { pkg, denoJson });
+  const root = detectTechnologiesInDir(projectDir, { pkg });
   const seenIds = new Map<string, Technology>(root.detected.map((t) => [t.id, t]));
   let isFrontend = root.isFrontendByPackages || root.isFrontendByFiles;
 
-  const workspaceDirs = resolveWorkspaces(projectDir, { pkg, denoJson });
+  const workspaceDirs = resolveWorkspaces(projectDir, { pkg });
   for (const wsDir of workspaceDirs) {
     const ws = detectTechnologiesInDir(wsDir, { skipFrontendFiles: isFrontend });
 

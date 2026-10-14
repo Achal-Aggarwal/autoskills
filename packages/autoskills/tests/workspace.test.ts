@@ -103,43 +103,4 @@ describe("resolveWorkspaces", () => {
     writePackageJson(tmp.path, { workspaces: [] });
     deepStrictEqual(resolveWorkspaces(tmp.path), []);
   });
-
-  it("detects Deno workspace members from deno.json", () => {
-    writeJson(tmp.path, "deno.json", { workspace: ["./api", "./shared"] });
-    writeJson(tmp.path, "api/deno.json", {});
-    writeJson(tmp.path, "shared/deno.json", {});
-    const result = resolveWorkspaces(tmp.path);
-    strictEqual(result.length, 2);
-    ok(result.some((d) => d.includes("api")));
-    ok(result.some((d) => d.includes("shared")));
-  });
-
-  it("Deno workspace members with deno.jsonc are detected", () => {
-    writeJson(tmp.path, "deno.json", { workspace: ["./lib"] });
-    writeJson(tmp.path, "lib/deno.jsonc", {});
-    const result = resolveWorkspaces(tmp.path);
-    strictEqual(result.length, 1);
-    ok(result[0].includes("lib"));
-  });
-
-  it("pnpm-workspace.yaml takes precedence over deno.json workspace", () => {
-    writePackageJson(tmp.path);
-    writeFile(tmp.path, "pnpm-workspace.yaml", "packages:\n  - packages/*\n");
-    writeJson(tmp.path, "deno.json", { workspace: ["./deno-member"] });
-    addWorkspace(tmp.path, "packages/core");
-    writeJson(tmp.path, "deno-member/deno.json", {});
-    const result = resolveWorkspaces(tmp.path);
-    strictEqual(result.length, 1);
-    ok(result[0].includes("core"));
-  });
-
-  it("package.json workspaces take precedence over deno.json workspace", () => {
-    writePackageJson(tmp.path, { workspaces: ["packages/*"] });
-    writeJson(tmp.path, "deno.json", { workspace: ["./deno-member"] });
-    addWorkspace(tmp.path, "packages/ui");
-    writeJson(tmp.path, "deno-member/deno.json", {});
-    const result = resolveWorkspaces(tmp.path);
-    strictEqual(result.length, 1);
-    ok(result[0].includes("ui"));
-  });
 });
