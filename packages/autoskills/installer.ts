@@ -269,12 +269,31 @@ function isDisallowedSkillFile(rel: string): boolean {
   return rel.toLowerCase().endsWith(".zip");
 }
 
+// Bounded parallelism for raw file downloads, shared by every concurrent install:
+// some skills ship hundreds of files, so fetching them one by one dominated install time.
+const MAX_PARALLEL_DOWNLOADS = 16;
+let activeDownloads = 0;
+const downloadQueue: (() => void)[] = [];
+
+async function withDownloadSlot<T>(task: () => Promise<T>): Promise<T> {
+  if (activeDownloads < MAX_PARALLEL_DOWNLOADS) activeDownloads++;
+  else await new Promise<void>((resolve) => downloadQueue.push(resolve));
+  try {
+    return await task();
+  } finally {
+    // Hand the slot straight to the next waiter so the limit is never exceeded.
+    const next = downloadQueue.shift();
+    if (next) next();
+    else activeDownloads--;
+  }
+}
+
 async function downloadRegistryFile(
   skillName: string,
   entry: RegistryEntry,
   rel: string,
   opts: InstallOptions,
-): Promise<{ buf: Buffer; url: string }> {
+): Promise<{ buf: Buffer; url: string; hash: string }> {
   const normalizedRel = normalizeRegistryRelPath(rel);
 
   if (isDisallowedSkillFile(normalizedRel)) {
@@ -315,7 +334,7 @@ async function downloadRegistryFile(
       continue;
     }
     opts.onTrace?.(`downloaded ${normalizedRel} from ${url}`);
-    return { buf, url };
+    return { buf, url, hash: actual };
   }
 
   throw new Error(`download failed for ${normalizedRel}: ${errors.join("; ")}`);
@@ -327,18 +346,17 @@ async function downloadRegistryEntry(
   destDir: string,
   opts: InstallOptions,
 ): Promise<void> {
-  const files = [];
-  for (const rel of entry.files) {
-    files.push({
+  const files = await Promise.all(
+    entry.files.map(async (rel) => ({
       rel: normalizeRegistryRelPath(rel),
-      ...(await downloadRegistryFile(skillName, entry, rel, opts)),
-    });
-  }
+      ...(await withDownloadSlot(() => downloadRegistryFile(skillName, entry, rel, opts))),
+    })),
+  );
 
   const bundleHash = createHash("sha256")
     .update(
       files
-        .map(({ rel, buf }) => `${rel}:${sha256Buffer(buf)}`)
+        .map(({ rel, hash }) => `${rel}:${hash}`)
         .sort()
         .join("\n"),
     )
