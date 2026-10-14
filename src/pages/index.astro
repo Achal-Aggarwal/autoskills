@@ -2,7 +2,8 @@
 import Layout from '../layouts/Layout.astro';
 import '../styles/global.css';
 
-const iconFiles = import.meta.glob<string>('../icons/*.svg', { query: '?raw', import: 'default', eager: true });
+// Emitted as hashed files and lazy-loaded: inlining them added ~270 KB to the HTML.
+const iconUrls = import.meta.glob<string>('../icons/*.svg', { query: '?url&no-inline', import: 'default', eager: true });
 
 function toFilename(name: string) {
   return name.toLowerCase().replace(/#/g, 'sharp').replace(/\//g, '-').replace(/\s+/g, '-').replace(/\./g, '') + '.svg';
@@ -10,7 +11,7 @@ function toFilename(name: string) {
 
 function getIcon(name: string): string | undefined {
   const key = `../icons/${toFilename(name)}`;
-  return iconFiles[key];
+  return iconUrls[key];
 }
 
 interface Sponsor {
@@ -127,6 +128,15 @@ const popularityOrder = [
   'threejs'
 ];
 
+const LOGO_LINES = [
+  ' █████╗ ██╗   ██╗████████╗ ██████╗ ███████╗██╗  ██╗██╗██╗     ██╗     ███████╗',
+  '██╔══██╗██║   ██║╚══██╔══╝██╔═══██╗██╔════╝██║ ██╔╝██║██║     ██║     ██╔════╝',
+  '███████║██║   ██║   ██║   ██║   ██║███████╗█████╔╝ ██║██║     ██║     ███████╗',
+  '██╔══██║██║   ██║   ██║   ██║   ██║╚════██║██╔═██╗ ██║██║     ██║     ╚════██║',
+  '██║  ██║╚██████╔╝   ██║   ╚██████╔╝███████║██║  ██╗██║███████╗███████╗███████║',
+  '╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚══════╝',
+].join('\n');
+
 const skillsMap = [...SKILLS_MAP].sort((a: any, b: any) => {
   const ai = popularityOrder.indexOf(a.id);
   const bi = popularityOrder.indexOf(b.id);
@@ -140,7 +150,7 @@ const skillsMap = [...SKILLS_MAP].sort((a: any, b: any) => {
   <main class="text-sm leading-relaxed px-6 py-12 lg:w-1/2 lg:pl-12 lg:pr-8 lg:py-16">
 
     <!-- ASCII Logo (animated reveal) -->
-    <pre id="ascii-logo" class="text-[6px] sm:text-xs lg:text-[9px] leading-none mb-8 h-[6lh] overflow-hidden" aria-hidden="true"></pre>
+    <pre class="ascii-reveal w-fit text-[6px] sm:text-xs lg:text-[9px] leading-none mb-8 h-[6lh] overflow-hidden" aria-hidden="true">{LOGO_LINES}</pre>
 
     <h1 class="text-zinc-400 mb-8">
       Auto-detect your tech stack and install the best<br/>
@@ -256,11 +266,11 @@ const skillsMap = [...SKILLS_MAP].sort((a: any, b: any) => {
       <p class="text-zinc-600 mb-6">Each technology auto-installs curated skills from the audited autoskills registry. Links open the original skill pages for context.</p>
       <div class="space-y-0">
         {skillsMap.map((tech) => (
-          <div class="group border-b border-zinc-800/40 py-2.5 first:border-t">
+          <div class="group border-b border-zinc-800/40 py-2.5 first:border-t [content-visibility:auto] [contain-intrinsic-size:auto_2.5rem]">
             <div class="flex items-start gap-3">
               <div class="flex items-center gap-2 w-32 shrink-0 pt-px">
                 {getIcon(tech.name) ? (
-                  <span class={`w-3.5 h-3.5 shrink-0 opacity-50 group-hover:opacity-100 transition-opacity [&>svg]:w-full [&>svg]:h-full`} set:html={getIcon(tech.name)} />
+                  <img src={getIcon(tech.name)} alt="" width="14" height="14" loading="lazy" decoding="async" class="w-3.5 h-3.5 shrink-0 opacity-50 group-hover:opacity-100 transition-opacity" />
                 ) : (
                   <span class="w-3.5 h-3.5 shrink-0"></span>
                 )}
@@ -307,12 +317,13 @@ const skillsMap = [...SKILLS_MAP].sort((a: any, b: any) => {
             style={`--i: ${i}`}
           >
             <img
-              src={`https://unavatar.io/github/${s.login}`}
+              src={`https://avatars.githubusercontent.com/u/${s.id}?s=64&v=4`}
               alt={s.login}
               width="32"
               height="32"
               class="size-8 rounded-full border-2 border-zinc-900 shadow-sm shadow-black/30"
               loading="lazy"
+              decoding="async"
             />
             <span class="sponsor-tip">@{s.login}</span>
           </a>
@@ -364,95 +375,6 @@ const skillsMap = [...SKILLS_MAP].sort((a: any, b: any) => {
       await navigator.clipboard.writeText('npx autoskills')
     })
 
-    function PrintAsciiWithAnimation (ascii: string[], id: string) {
-      const START_COLOR = '#3f3f46'  // zinc-700 (gris clarito)
-      const END_COLOR = '#f4f4f5'    // zinc-100 (blanco)
-
-      const logo = document.getElementById(id)
-      if (!logo) {
-        // Element not in DOM yet, wait for it
-        const observer = new MutationObserver(() => {
-          const el = document.getElementById(id)
-          if (el) {
-            observer.disconnect()
-            runAnimation(el)
-          }
-        })
-        observer.observe(document.body, { childList: true, subtree: true })
-        return
-      }
-      runAnimation(logo)
-
-      function runAnimation(logo: HTMLElement) {
-        const cols = Math.max(...ascii.map(l => l.length))
-        const rows = ascii.length
-  
-        // Build grid
-        const grid: HTMLSpanElement[][] = []
-        for (const line of ascii) {
-          const row: HTMLSpanElement[] = []
-          const lineEl = document.createElement('div')
-          lineEl.style.height = '1lh'
-          lineEl.style.lineHeight = '1'
-          for (let c = 0; c < cols; c++) {
-            const ch = line[c] ?? ' '
-            const span = document.createElement('span')
-            span.textContent = ch
-            span.style.color = START_COLOR
-            lineEl.appendChild(span)
-            row.push(span)
-          }
-          logo.appendChild(lineEl)
-          grid.push(row)
-        }
-  
-        // Diagonal sweep: top-left to bottom-right, gray → white
-        const maxDist = cols + rows
-        const SPEED = 0.9
-        let frame = 0
-        const totalFrames = Math.ceil((maxDist + 10) / SPEED)
-  
-        function animate() {
-          const waveFront = frame * SPEED
-  
-          for (let r = 0; r < rows; r++) {
-            for (let c = 0; c < grid[r].length; c++) {
-              const dist = c + r * 3
-              const progress = Math.max(0, Math.min(1, (waveFront - dist) / 10))
-  
-              const gray = Math.round(63 + progress * (244 - 63))
-              grid[r][c].style.color = `rgb(${gray},${gray},${gray})`
-            }
-          }
-  
-          frame++
-          if (frame <= totalFrames) {
-            requestAnimationFrame(animate)
-          } else {
-            for (let r = 0; r < rows; r++)
-              for (let c = 0; c < grid[r].length; c++)
-                grid[r][c].style.color = END_COLOR
-          }
-        }
-  
-        requestAnimationFrame(animate)
-      }
-    }
-
-    // ── ASCII logo animation ─────────────────────────────────
-    {
-      const LOGO_LINES = [
-        ' █████╗ ██╗   ██╗████████╗ ██████╗ ███████╗██╗  ██╗██╗██╗     ██╗     ███████╗',
-        '██╔══██╗██║   ██║╚══██╔══╝██╔═══██╗██╔════╝██║ ██╔╝██║██║     ██║     ██╔════╝',
-        '███████║██║   ██║   ██║   ██║   ██║███████╗█████╔╝ ██║██║     ██║     ███████╗',
-        '██╔══██║██║   ██║   ██║   ██║   ██║╚════██║██╔═██╗ ██║██║     ██║     ╚════██║',
-        '██║  ██║╚██████╔╝   ██║   ╚██████╔╝███████║██║  ██╗██║███████╗███████╗███████║',
-        '╚═╝  ╚═╝ ╚═════╝    ╚═╝    ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝╚══════╝╚══════╝╚══════╝',
-      ]
-
-      PrintAsciiWithAnimation(LOGO_LINES, 'ascii-logo')      
-    }
-
     // ── Terminal animation ────────────────────────────────────
     const C = {
       z4: 'color:#a1a1aa',  // zinc-400
@@ -498,9 +420,7 @@ const skillsMap = [...SKILLS_MAP].sort((a: any, b: any) => {
     const SKILL_LIST = [
       { skill: 'vercel-react-best-practices', source: 'React' },
       { skill: 'vercel-composition-patterns', source: 'React' },
-      { skill: 'next-best-practices', source: 'Next.js' },
-      { skill: 'next-cache-components', source: 'Next.js' },
-      { skill: 'next-upgrade', source: 'Next.js' },
+      { skill: 'next-cache-components-adoption', source: 'Next.js' },
       { skill: 'astro', source: 'Astro' },
       { skill: 'tailwind-css-patterns', source: 'Tailwind CSS' },
       { skill: 'typescript-advanced-types', source: 'TypeScript' },
@@ -525,8 +445,7 @@ const skillsMap = [...SKILLS_MAP].sort((a: any, b: any) => {
 
       // Banner
       d(500, '')
-      d(30, '<pre id="term-ascii"></pre>')
-      PrintAsciiWithAnimation(BANNER, 'term-ascii')
+      d(30, `<pre class="ascii-reveal w-fit leading-none" style="--reveal-duration:.8s">${BANNER.join('\n')}</pre>`)
       d(0, '')
 
       // Detected technologies
@@ -641,29 +560,38 @@ const skillsMap = [...SKILLS_MAP].sort((a: any, b: any) => {
       }
     }
 
-    // Desktop: start immediately. Mobile: start when terminal scrolls into view.
+    // Only animate while the terminal is on screen and the tab is visible.
     const terminal = document.getElementById('terminal')
-    const isDesktop = window.matchMedia('(min-width: 1024px)').matches
+    let onScreen = false
+    let resume: (() => void) | null = null
+
+    function maybeResume() {
+      if (onScreen && !document.hidden && resume) {
+        resume()
+        resume = null
+      }
+    }
+
+    function whenVisible(): Promise<void> {
+      if (onScreen && !document.hidden) return Promise.resolve()
+      return new Promise((r) => { resume = r })
+    }
 
     async function loop() {
       while (true) {
+        await whenVisible()
         await runAnimation()
         await sleep(4000)
       }
     }
 
-    if (isDesktop) {
+    if (terminal) {
+      new IntersectionObserver((entries) => {
+        onScreen = entries[0].isIntersecting
+        maybeResume()
+      }, { threshold: 0.3 }).observe(terminal)
+      document.addEventListener('visibilitychange', maybeResume)
       loop()
-    } else if (terminal) {
-      let running = false
-      const observer = new IntersectionObserver(async (entries) => {
-        if (entries[0].isIntersecting && !running) {
-          running = true
-          observer.disconnect()
-          loop()
-        }
-      }, { threshold: 0.3 })
-      observer.observe(terminal)
     }
   </script>
 </Layout>

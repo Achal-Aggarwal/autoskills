@@ -1,4 +1,17 @@
-@import "tailwindcss";
+/* Only scan src/: the skills registry markdown would otherwise bloat the CSS. */
+@import "tailwindcss" source("..");
+
+/* Latin subset (+ arrows, box drawing and geometric shapes for the ASCII art). */
+@font-face {
+  font-family: "Geist Mono";
+  src: url("/fonts/GeistMono-Variable.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC,
+    U+2122, U+2190-21FF, U+2212, U+2215, U+2500-25FF, U+FEFF, U+FFFD;
+}
 
 @theme {
   --font-sans:
@@ -40,6 +53,27 @@
 
 *:hover::-webkit-scrollbar-thumb:hover {
   background: #3f3f46;
+}
+
+/* Diagonal gray → white sweep, painted by the compositor instead of per-char JS. */
+.ascii-reveal {
+  color: transparent;
+  background: linear-gradient(120deg, #f4f4f5 0 35%, #3f3f46 65% 100%) 100% 0 / 400% 100%;
+  background-clip: text;
+  animation: ascii-reveal var(--reveal-duration, 1.6s) ease-out var(--reveal-delay, 0s) forwards;
+}
+
+@keyframes ascii-reveal {
+  to {
+    background-position: 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ascii-reveal {
+    animation: none;
+    background-position: 0 0;
+  }
 }
 
 .sponsor-avatar {

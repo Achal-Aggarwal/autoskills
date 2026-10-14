@@ -82,6 +82,13 @@ function toFilename(name) {
   );
 }
 
+// Icons are served as standalone <img> files, which only render with the SVG namespace.
+function withSvgNamespace(svg) {
+  return /<svg\b[^>]*\sxmlns="http:\/\/www\.w3\.org\/2000\/svg"/.test(svg)
+    ? svg
+    : svg.replace(/<svg\b/, '<svg xmlns="http://www.w3.org/2000/svg"');
+}
+
 mkdirSync(ICONS_DIR, { recursive: true });
 
 console.log("Fetching SVGL API...");
@@ -103,7 +110,7 @@ for (const tech of TECHNOLOGIES) {
   seen.add(filename);
 
   if (INLINE_SVGS[tech]) {
-    writeFileSync(join(ICONS_DIR, filename), INLINE_SVGS[tech]);
+    writeFileSync(join(ICONS_DIR, filename), withSvgNamespace(INLINE_SVGS[tech]));
     console.log(`  ✔ ${tech} → ${filename} (inline)`);
     saved++;
     continue;
@@ -124,7 +131,7 @@ for (const tech of TECHNOLOGIES) {
   try {
     const svgRes = await fetch(svgUrl);
     const svgText = await svgRes.text();
-    writeFileSync(join(ICONS_DIR, filename), svgText);
+    writeFileSync(join(ICONS_DIR, filename), withSvgNamespace(svgText));
     console.log(`  ✔ ${tech} → ${filename}`);
     saved++;
   } catch (err) {
