@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.4.0](https://github.com/midudev/autoskills/releases/tag/v0.4.0) (2026-10-14)
+
+### ⚠️ Breaking Changes
+
+- refactor(autoskills)!: drop Deno support [`d6f4301`](https://github.com/midudev/autoskills/commit/d6f4301)
+
+### ✨ Features
+
+- feat(registry): re-review 41 pending skills with the new pipeline [`aff4e3c`](https://github.com/midudev/autoskills/commit/aff4e3c)
+- feat(sync): let an AI adjudicate flagged skills instead of a human [`98d42aa`](https://github.com/midudev/autoskills/commit/98d42aa)
+- fix(registry): add official FastAPI skill and merge duplicate techs [`f58a99c`](https://github.com/midudev/autoskills/commit/f58a99c)
+- feat(registry): sync skills and drop those removed upstream [`1228788`](https://github.com/midudev/autoskills/commit/1228788)
+- feat(autoskills): add ui command to browse installed skills [`1e5a14a`](https://github.com/midudev/autoskills/commit/1e5a14a)
+- Add fastmcp skill for Python MCP server development FastMCP is the standard Python framework for building MCP servers. This skill teaches production patterns verified against FastMCP 3.2.x, specifically addressing APIs that LLMs hallucinate (server.state, on_startup, context.name in middleware — none of which exist). Detection: 'fastmcp' pattern in pyproject.toml/requirements.txt Validation: 97.1% (agentskills.io spec checker) [`8caa407`](https://github.com/midudev/autoskills/commit/8caa407)
+- feat: add ElysiaJS support with skills registry documentation and icon [`b2e1400`](https://github.com/midudev/autoskills/commit/b2e1400)
+
+### 📦 Other Changes
+
+- test(cli): ignore FORCE_COLOR when checking CLI output [`97692cd`](https://github.com/midudev/autoskills/commit/97692cd)
+- chore(release): skip merge commits in the changelog [`5ba3aa3`](https://github.com/midudev/autoskills/commit/5ba3aa3)
+- docs: document ui command, missing flags and the AI review [`0ad8885`](https://github.com/midudev/autoskills/commit/0ad8885)
+- chore(sync): review skills with Claude and accept --only lists [`5740dd0`](https://github.com/midudev/autoskills/commit/5740dd0)
+- perf(autoskills): download skill files in parallel [`0293487`](https://github.com/midudev/autoskills/commit/0293487)
+- build(deps): update Astro 7, Tailwind, oxc, TypeScript 7 and pnpm [`18de798`](https://github.com/midudev/autoskills/commit/18de798)
+
 ## [0.3.6](https://github.com/midudev/autoskills/releases/tag/v0.3.6) (2026-05-04)
 
 ### ✨ Features
