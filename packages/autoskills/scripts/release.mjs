@@ -112,7 +112,7 @@ function getLastTag() {
  */
 function getCommitsSinceTag(tag) {
   const range = tag ? `${tag}..HEAD` : "HEAD";
-  const log = run(`git log ${range} --pretty=format:"%s|%h" -- packages/autoskills/`, {
+  const log = run(`git log ${range} --no-merges --pretty=format:"%s|%h" -- packages/autoskills/`, {
     cwd: REPO_ROOT,
   });
   if (!log) return [];
