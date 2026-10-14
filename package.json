@@ -16,17 +16,16 @@
     "hooks:install": "git config core.hooksPath .githooks"
   },
   "dependencies": {
-    "@tailwindcss/vite": "4.3.0",
-    "astro": "6.4.4",
-    "geist": "1.7.2",
-    "tailwindcss": "4.3.0"
+    "@tailwindcss/vite": "4.3.3",
+    "astro": "7.3.8",
+    "tailwindcss": "4.3.3"
   },
   "devDependencies": {
-    "oxfmt": "0.53.0",
-    "oxlint": "1.68.0"
+    "oxfmt": "0.73.0",
+    "oxlint": "1.88.0"
   },
   "engines": {
     "node": ">=22.12.0"
   },
-  "packageManager": "pnpm@10.33.0"
+  "packageManager": "pnpm@10.34.6"
 }
