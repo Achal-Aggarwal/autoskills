@@ -1,0 +1,414 @@
+# Workflow 01: Run Test Suite
+
+**Purpose:** Run and verify the test suite BEFORE any upgrade work begins. No exceptions: no upgrade work until tests pass, and if tests fail, STOP and help fix them first.
+
+**When to use:** MANDATORY first step for ALL upgrade requests - no exceptions
+
+## Inputs
+
+- The application repository, with its test framework (RSpec, Minitest, or both)
+
+## Outputs
+
+- Baseline metrics (test count, coverage if available)
+- If no runnable test suite exists: the no-test-suite smoke baseline from `references/no-test-suite-smoke-reference.md`, with baseline confidence recorded as partial
+
+## Gates (must be true before the next workflow that runs)
+
+- All tests pass (0 failures). If ANY tests fail: STOP the upgrade process, report failing tests to user, offer to help fix failing tests, do NOT proceed until all tests pass
+- If no runnable test suite exists: continue only if boot/routes checks pass and the user accepts the risk of proceeding without real tests
+
+## Pre-upgrade checklist (FastRuby.io best practices, recommended before starting any upgrade)
+
+**Test Coverage Assessment (AUTOMATED)**
+- [x] Run test suite - all tests passing? **← Claude runs this automatically**
+- [x] Check test coverage (aim for >70%) **← Claude captures this if SimpleCov is configured**
+- [ ] Review critical paths have coverage
+
+The deprecation-warnings items of the checklist live in `workflows/02-resolve-deprecation-warnings-workflow.md`, which acts on this workflow's Step 2 sweep.
+
+---
+
+## Why This Step is Critical
+
+The FastRuby.io methodology requires a green test suite before starting any upgrade:
+
+1. **Establishes Baseline** - Know what works before making changes
+2. **Catches Pre-existing Issues** - Don't blame the upgrade for existing bugs
+3. **Enables Confidence** - Verify changes don't break existing functionality
+4. **Prevents Wasted Effort** - Don't upgrade code that's already broken
+
+**If tests fail before the upgrade, they will definitely fail after.**
+
+---
+
+## Step-by-Step Workflow
+
+### Step 1: Detect Test Framework
+
+Check which test framework the project uses:
+
+```bash
+# Check for RSpec
+if [ -d "spec" ] && [ -f "spec/spec_helper.rb" ]; then
+  TEST_FRAMEWORK="rspec"
+fi
+
+# Check for Minitest
+if [ -d "test" ] && [ -f "test/test_helper.rb" ]; then
+  TEST_FRAMEWORK="minitest"
+fi
+```
+
+**Detection Logic:**
+- If `spec/` directory exists with `spec_helper.rb` → RSpec
+- If `test/` directory exists with `test_helper.rb` → Minitest
+- If both exist → Prefer RSpec, but note both are available
+- Check Gemfile for `rspec-rails` or `minitest` gems
+
+---
+
+### Step 2: Sweep for deprecation-behavior overrides
+
+Before running the suite, grep for places that change deprecation behavior (raise / silence / disallow) so test results can be interpreted correctly. The obvious places (`config/application.rb`, `config/environments/*.rb`) are not enough. Apps also use the `config.active_support.deprecation =` env DSL, Rails 7.1+ apps use the `deprecators` registry, RSpec autoloads `-r` requires from `.rspec`, and test helpers can install hooks like `RSpec.configure { |c| c.raise_errors_for_deprecations! }`. Miss those and a "the upgrade broke tests" report can really be "every deprecation has been raising for months."
+
+Sweep these locations:
+
+- `config/application.rb`, `config/environments/*.rb`, `config/initializers/*.rb`
+- `.rspec`, `spec/.rspec` (look for `-r raise_errors_for_deprecations` and similar autoloads)
+- `spec/spec_helper.rb`, `spec/rails_helper.rb`, `spec/support/**/*.rb`
+- `test/test_helper.rb`, `test/support/`, `test/minitest/` (Minitest apps)
+- `Rakefile`, `lib/tasks/*.rake`
+- Any Bundler-loaded test-group gem that wires deprecation behavior
+
+```bash
+grep -rnE "raise_errors_for_deprecations|(ActiveSupport::Deprecation|Rails\.application\.deprecators|[A-Z]\w*\.deprecator)\.(behavior|disallowed_behavior|silenced)\s*=|(ActiveSupport::Deprecation|Rails\.application\.deprecators|[A-Z]\w*\.deprecator)\.silence\b|config\.active_support\.(deprecation|disallowed_deprecation|disallowed_deprecation_warnings|report_deprecations)\s*=" \
+  .rspec spec/.rspec spec/spec_helper.rb spec/rails_helper.rb Rakefile \
+  config/ spec/support/ lib/tasks/ \
+  test/test_helper.rb test/support/ test/minitest/ 2>/dev/null
+```
+
+The trailing `silence\b` alternation catches the block form `ActiveSupport::Deprecation.silence do ... end`, which scopes silencing to a noisy call site and is otherwise easy to miss. The `\b` word boundary excludes `silenced` (already covered by the assignment branch).
+
+Which forms appear depends on the app's Rails version:
+
+- `config.active_support.deprecation=` / `ActiveSupport::Deprecation.behavior=` — Rails 3+ (classic global config)
+- `.rspec` `-r raise_errors_for_deprecations` / `raise_errors_for_deprecations!` — RSpec hook, any version
+- `Rails.application.deprecators` / `<Framework>.deprecator` (e.g. `ActiveRecord.deprecator`) — Rails 7.1+ (deprecators registry)
+
+Running this against a Rails 5–7.0 app and seeing no `deprecators` hits is expected, not a gap.
+
+### Step 3: Run the Test Suite
+
+Execute the appropriate test command:
+
+**For RSpec:**
+```bash
+bundle exec rspec --format progress
+```
+
+**For Minitest:**
+```bash
+bundle exec rails test
+```
+
+**For both (if project uses both):**
+```bash
+bundle exec rspec && bundle exec rails test
+```
+
+**With Coverage (if SimpleCov is configured):**
+```bash
+COVERAGE=true bundle exec rspec
+```
+
+---
+
+### Step 4: Capture Results
+
+Parse the test output to extract:
+
+| Metric | Description | Example |
+|--------|-------------|---------|
+| Total Tests | Number of test examples | 245 examples |
+| Passing | Tests that passed | 240 passed |
+| Failing | Tests that failed | 3 failures |
+| Pending | Skipped/pending tests | 2 pending |
+| Coverage | Code coverage % (if available) | 78.5% |
+| Duration | Time to run tests | 45.2 seconds |
+
+**RSpec Output Pattern:**
+```
+245 examples, 3 failures, 2 pending
+```
+
+**Minitest Output Pattern:**
+```
+245 runs, 512 assertions, 3 failures, 0 errors, 2 skips
+```
+
+---
+
+### Step 5: Evaluate Results
+
+#### If ALL Tests Pass (0 failures):
+
+```
+✅ TEST SUITE PASSED
+
+Baseline Metrics:
+- Total tests: 245
+- Passing: 245 (100%)
+- Pending: 2
+- Coverage: 78.5% (if available)
+- Duration: 45.2s
+
+Proceeding with upgrade assessment...
+```
+
+**Action:** Continue to Workflow 02 (`workflows/02-resolve-deprecation-warnings-workflow.md`)
+
+#### If ANY Tests Fail:
+
+```
+❌ TEST SUITE FAILED - UPGRADE BLOCKED
+
+Results:
+- Total tests: 245
+- Passing: 240
+- Failing: 3
+- Pending: 2
+
+⚠️  CANNOT PROCEED WITH UPGRADE
+
+The following tests must be fixed before upgrading:
+
+1. spec/models/user_spec.rb:45
+   - Expected true, got false
+
+2. spec/controllers/posts_controller_spec.rb:123
+   - NoMethodError: undefined method 'foo'
+
+3. spec/features/login_spec.rb:67
+   - Timeout waiting for element
+
+Would you like help fixing these failing tests?
+```
+
+**Action:** STOP the upgrade process. Offer to help fix failing tests.
+
+---
+
+### Step 6: Handle Edge Cases
+
+#### No Tests Found
+
+```
+⚠️  NO TEST SUITE DETECTED
+
+Could not find:
+- spec/ directory (RSpec)
+- test/ directory (Minitest)
+
+This is a significant risk for upgrading. Before proceeding:
+1. Run the no-test-suite smoke baseline in `references/no-test-suite-smoke-reference.md`
+2. Record boot, routes, migration-status, and asset/build results
+3. Recommend adding focused test coverage before or during the first upgrade hop
+
+Do you want to proceed with only a smoke baseline? (This is risky)
+```
+
+**Action:** Load `references/no-test-suite-smoke-reference.md`, run the safe read-only baseline checks, and mark baseline confidence as `partial` if they pass. If any boot/routes check fails, stop the upgrade until the baseline is fixed or the user explicitly accepts the blocker.
+
+#### Tests Take Too Long (> 10 minutes)
+
+```
+⏱️  TEST SUITE RUNNING...
+
+The test suite is taking longer than expected.
+Current progress: 150/245 tests completed
+
+Options:
+1. Continue waiting for full suite
+2. Run a subset of critical tests
+3. Skip test verification (not recommended)
+```
+
+#### Test Database Issues
+
+If tests fail due to database issues:
+
+```bash
+# Common fixes
+bundle exec rails db:test:prepare
+bundle exec rails db:migrate RAILS_ENV=test
+```
+
+---
+
+## Output Format
+
+When presenting results to user, use this format:
+
+### Tests Passed:
+
+```markdown
+## Test Suite Verification ✅
+
+**Status:** PASSED - Ready for upgrade
+
+| Metric | Value |
+|--------|-------|
+| Total Tests | 245 |
+| Passing | 245 |
+| Failing | 0 |
+| Pending | 2 |
+| Coverage | 78.5% |
+| Duration | 45.2s |
+
+Baseline recorded. Proceeding with upgrade assessment...
+```
+
+### Tests Failed:
+
+```markdown
+## Test Suite Verification ❌
+
+**Status:** FAILED - Upgrade blocked
+
+| Metric | Value |
+|--------|-------|
+| Total Tests | 245 |
+| Passing | 240 |
+| Failing | 3 |
+| Pending | 2 |
+
+### Failing Tests
+
+The following tests must pass before upgrading:
+
+1. **spec/models/user_spec.rb:45**
+   ```
+   Failure/Error: expect(user.active?).to be true
+   expected true, got false
+   ```
+
+2. **spec/controllers/posts_controller_spec.rb:123**
+   ```
+   NoMethodError: undefined method 'foo' for #<Post:0x00007f>
+   ```
+
+3. **spec/features/login_spec.rb:67**
+   ```
+   Capybara::ElementNotFound: Unable to find button "Login"
+   ```
+
+### Next Steps
+
+1. Fix the failing tests above
+2. Run the test suite again: `bundle exec rspec`
+3. Once all tests pass, we can proceed with the upgrade
+
+Would you like help debugging these test failures?
+```
+
+---
+
+## Common Test Failures and Fixes
+
+### 1. Database Schema Mismatch
+
+**Error:** `ActiveRecord::PendingMigrationError`
+
+**Fix:**
+```bash
+bundle exec rails db:migrate RAILS_ENV=test
+```
+
+### 2. Missing Test Database
+
+**Error:** `ActiveRecord::NoDatabaseError`
+
+**Fix:**
+```bash
+bundle exec rails db:create RAILS_ENV=test
+bundle exec rails db:schema:load RAILS_ENV=test
+```
+
+### 3. Stale Factory Definitions
+
+**Error:** `FactoryBot::InvalidFactoryError`
+
+**Fix:** Update factory definitions to match current model validations
+
+### 4. Time-Dependent Tests
+
+**Error:** Tests pass locally but fail in CI (or vice versa)
+
+**Fix:**
+```ruby
+# Use travel_to for time-dependent tests
+travel_to Time.zone.local(2024, 1, 1) do
+  # test code
+end
+```
+
+### 5. Missing Environment Variables
+
+**Error:** `KeyError: key not found`
+
+**Fix:** Ensure `.env.test` or test environment has required variables
+
+---
+
+## Integration with Main Workflow
+
+This workflow integrates with the main upgrade process:
+
+```
+┌─────────────────────────────────────────┐
+│  Workflow 01: Run Test Suite            │
+│  (THIS WORKFLOW)                        │
+│                                         │
+│  ┌─────────────┐    ┌─────────────────┐ │
+│  │ Run Tests   │───▶│ All Pass?       │ │
+│  └─────────────┘    └─────────────────┘ │
+│                            │            │
+│              ┌─────────────┴──────────┐ │
+│              ▼                        ▼ │
+│         ┌────────┐              ┌──────┐│
+│         │  YES   │              │  NO  ││
+│         └────────┘              └──────┘│
+│              │                      │   │
+│              ▼                      ▼   │
+│     ┌──────────────┐      ┌───────────┐ │
+│     │ Record       │      │ STOP      │ │
+│     │ Baseline     │      │ Help Fix  │ │
+│     │ Continue     │      │ Tests     │ │
+│     └──────────────┘      └───────────┘ │
+└─────────────────────────────────────────┘
+              │
+              ▼
+┌─────────────────────────────────────────┐
+│  Workflow 02: Resolve Deprecations      │
+│  (Continue main workflow)               │
+└─────────────────────────────────────────┘
+```
+
+---
+
+## Self-review checklist
+
+Before proceeding past this step:
+
+- [ ] Test framework detected correctly
+- [ ] Test suite executed successfully
+- [ ] All tests pass (0 failures)
+- [ ] Baseline metrics recorded
+- [ ] If no suite exists: no-test-suite smoke baseline recorded as `partial`
+- [ ] User informed of results
+- [ ] If failures: user understands they must fix tests first
+
+---
+
+**This step is NON-NEGOTIABLE. Never skip test verification.**

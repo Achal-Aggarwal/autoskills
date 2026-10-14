@@ -1,0 +1,118 @@
+# Fixture expectations for rails-81-patterns.yml.
+#
+# Keyed by variable_name. See rails-40-patterns.expectations.yml for the format.
+#
+# Run with:
+#   bin/test-patterns rails-upgrade/detection-scripts/patterns/rails-81-patterns.yml
+
+SEMICOLON_SEPARATOR:
+  match:
+    - "    redirect_to \"/search?q=test;page=2\""
+    - "  get \"/items?filter[state]=open;sort=name\""
+    - "    <a href=\"/feed?format=rss;lang=en\">Feed</a>"
+    - "    url = \"#{base}/export?from=#{from};to=#{to}\""
+    # interpolation and a HAML id element at the start of the line
+    - "#{base}/export?from=#{from};to=#{to}"
+    - "#feed= link_to 'Feed', '/feed?format=rss;lang=en'"
+  no_match:
+    # comments: Ruby, JS, ERB, HAML
+    - "  # the old client sent /search?q=test;page=2"
+    - "  // /search?q=test;page=2"
+    - "  <%# /search?q=test;page=2 %>"
+    - "  -# /search?q=test;page=2"
+    # an ampersand-separated query, and its HTML-escaped form
+    - "    redirect_to \"/search?q=test&page=2\""
+    - "    <a href=\"/search?q=test&amp;page=2\">Next</a>"
+    # a semicolon that is not between two key=value pairs
+    - "    params = { q: params[:q] };"
+    - "    src=\"data:image/png;base64,iVBORw0KGgo=\""
+    - "    style=\"color: red; width: 10px\""
+    # an explicit separator still works on 8.1
+    - "    params = Rack::Utils.parse_nested_query(qs, \"&;\")"
+    # minified JS
+    - "e?t=1;n()"
+    - "a?b=c==d;e=f"
+    - "x?y=f(g);h=1"
+
+STRICT_QUERY_STRING_SEPARATOR_CONFIG:
+  match:
+    - "  config.action_dispatch.strict_query_string_separator = false"
+    - "  ActionDispatch::QueryParser.strict_query_string_separator = true"
+  no_match:
+    - "  # config.action_dispatch.strict_query_string_separator = false"
+
+ROUTES_MULTIPLE_PATHS_REMOVED:
+  match:
+    # two string paths: 8.0 warns, 8.1 raises ArgumentError
+    - "  get '/old1', '/old2', to: 'foo#bar'"
+    - "  get \"/a\", \"/b\", to: \"x#y\""
+    - "  match 'a', 'b', via: :get"
+    - "  get('/a', '/b', to: 'x#y')"
+    # two action symbols inside a member or collection block
+    - "      get :preview, :download"
+    - "      post :a, :b, on: :member"
+    # A path list that continues on the next line is found by the scanner
+    # (the `\s*` after the comma crosses the newline), proved with
+    # pattern_lab.rb scan; fixture lines are single lines.
+  no_match:
+    # one path plus options, new and hash-rocket style
+    - "  get '/a', to: 'x#y'"
+    - "  get 'photos/:id', :to => 'photos#show'"
+    - "  get :search, :on => :collection"
+    - "  get :tos, :to => 'x#y'"
+    - "  get :show, on: :member"
+    - "  get '/a' => 'x#y'"
+    - "  match 'x', via: [:get, :post]"
+    # the array form draws no route on 8.0 or 8.1; it is not this change
+    - "  get ['/a', '/b'], to: 'x#y'"
+    # resources takes several names on purpose
+    - "  resources :photos, :comments"
+    # commented out
+    - "  # get '/a', '/b'"
+
+BENCHMARK_MS_REMOVED:
+  match:
+    - "    elapsed = Benchmark.ms { run_report }"
+    - "    Benchmark.ms do"
+    - "    ::Benchmark.ms { run }"
+  no_match:
+    # the replacement, and other Benchmark methods
+    - "    ActiveSupport::Benchmark.realtime(:float_millisecond) { run }"
+    - "    Benchmark.realtime { run }"
+    - "    Benchmark.msg"
+
+AS_CONFIGURABLE:
+  match:
+    - "  include ActiveSupport::Configurable"
+    - "  extend ActiveSupport::Configurable"
+  no_match:
+    # the replacement
+    - "  class_attribute :timeout"
+    - "  config_accessor :timeout"
+
+IGNORE_LEADING_BRACKETS_CONFIG:
+  match:
+    - "    config.action_dispatch.ignore_leading_brackets = true"
+    - "  Rails.application.config.action_dispatch.ignore_leading_brackets = false"
+  no_match:
+    - "    config.action_dispatch.strict_query_string_separator = true"
+
+TO_TIME_PRESERVES_TIMEZONE_CONFIG:
+  match:
+    - "    config.active_support.to_time_preserves_timezone = :offset"
+    - "    config.active_support.to_time_preserves_timezone = :zone unless NextRails.next?"
+    - "Rails.application.config.active_support.to_time_preserves_timezone = false"
+  no_match:
+    # commented-out line in a new_framework_defaults file
+    - "# Rails.application.config.active_support.to_time_preserves_timezone = :zone"
+
+MB_CHARS:
+  match:
+    - "    name.mb_chars.upcase.to_s"
+    - "    ActiveSupport::Multibyte::Chars.new(name)"
+    - "    str.mb_chars"
+  no_match:
+    # the replacement, and lookalike names
+    - "    name.upcase"
+    - "    mb_chars_count = 1"
+    - "    obj.mb_chars_for(x)"

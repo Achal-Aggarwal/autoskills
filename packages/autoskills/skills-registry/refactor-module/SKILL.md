@@ -2,6 +2,7 @@
 name: refactor-module
 description: Transform monolithic Terraform configurations into reusable, maintainable modules following HashiCorp's module design principles and community best practices.
 metadata:
+  lifecycle-status: active
   copyright: Copyright IBM Corp. 2026
   version: "0.0.1"
 ---
@@ -22,7 +23,7 @@ The agent will analyze existing Terraform code and systematically refactor it in
 ## Prerequisites
 - Existing Terraform configuration to refactor
 - Understanding of resource dependencies
-- Access to current state file (for migration planning)
+- Access to inspect current state via `terraform state list` / `terraform show -json` (for migration planning)
 - Knowledge of module registry patterns
 
 ## Input Parameters
@@ -65,7 +66,7 @@ variable "network_config" {
     availability_zones = list(string)
     enable_nat         = bool
   })
-  
+
   validation {
     condition     = can(cidrhost(var.network_config.cidr_block, 0))
     error_message = "CIDR block must be valid IPv4 CIDR."
@@ -105,7 +106,7 @@ output "private_subnet_ids" {
 resource "aws_vpc" "main" {
   cidr_block = "10.0.0.0/16"
   enable_dns_hostnames = true
-  
+
   tags = {
     Name = "production-vpc"
     Environment = "prod"
@@ -116,7 +117,7 @@ resource "aws_subnet" "public_1" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.1.0/24"
   availability_zone = "us-east-1a"
-  
+
   tags = {
     Name = "public-subnet-1"
     Type = "public"
@@ -127,7 +128,7 @@ resource "aws_subnet" "public_2" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = "10.0.2.0/24"
   availability_zone = "us-east-1b"
-  
+
   tags = {
     Name = "public-subnet-2"
     Type = "public"
@@ -136,7 +137,7 @@ resource "aws_subnet" "public_2" {
 
 resource "aws_internet_gateway" "main" {
   vpc_id = aws_vpc.main.id
-  
+
   tags = {
     Name = "production-igw"
   }
@@ -156,7 +157,7 @@ resource "aws_vpc" "main" {
   cidr_block           = var.cidr_block
   enable_dns_hostnames = var.enable_dns_hostnames
   enable_dns_support   = var.enable_dns_support
-  
+
   tags = merge(
     var.tags,
     {
@@ -167,12 +168,12 @@ resource "aws_vpc" "main" {
 
 resource "aws_subnet" "public" {
   for_each = var.create_public_subnets ? toset(var.availability_zones) : []
-  
+
   vpc_id                  = aws_vpc.main.id
   cidr_block              = cidrsubnet(var.cidr_block, 8, index(var.availability_zones, each.value))
   availability_zone       = each.value
   map_public_ip_on_launch = true
-  
+
   tags = merge(
     var.tags,
     {
@@ -185,7 +186,7 @@ resource "aws_subnet" "public" {
 resource "aws_internet_gateway" "main" {
   count  = var.create_public_subnets ? 1 : 0
   vpc_id = aws_vpc.main.id
-  
+
   tags = merge(
     var.tags,
     {
@@ -203,7 +204,7 @@ variable "name" {
 variable "cidr_block" {
   description = "CIDR block for the VPC"
   type        = string
-  
+
   validation {
     condition     = can(cidrhost(var.cidr_block, 0))
     error_message = "Must be a valid IPv4 CIDR block."
@@ -263,11 +264,11 @@ output "internet_gateway_id" {
 # Root configuration using module
 module "vpc" {
   source = "./modules/vpc"
-  
+
   name               = "production"
   cidr_block         = "10.0.0.0/16"
   availability_zones = ["us-east-1a", "us-east-1b", "us-east-1c"]
-  
+
   tags = {
     Environment = "production"
     ManagedBy   = "Terraform"
@@ -276,6 +277,27 @@ module "vpc" {
 ```
 
 ### 4. State Migration
+
+#### Inspecting Current State
+Before writing `moved` blocks or `state mv` commands, inspect the current state to map
+existing resource addresses. Prefer the documented, stable, and more token-efficient
+commands over reading the raw state file:
+
+```bash
+# Enumerate current resource addresses (the inputs for `moved` / `state mv`)
+terraform state list
+
+# Inspect resolved attribute values when you need them
+terraform show -json | jq '.values.root_module'
+```
+
+`terraform show -json` requires providers to be installed (`terraform init`), since it
+renders values against provider schemas. **Fall back to the raw state
+(`terraform state pull` / `terraform.tfstate`) only when** providers aren't available and
+`init` can't run, you need only coarse info (addresses, outputs, `serial`/`lineage`), or you
+must avoid executing Terraform. Avoid parsing the raw version-4 state format as a stable
+interface. **Note:** state contains sensitive values in plaintext in every format — never
+echo state contents into logs or output.
 
 #### Generate Migration Plan
 ```hcl
@@ -331,15 +353,15 @@ Creates a VPC with configurable public and private subnets across multiple avail
 \`\`\`hcl
 module "vpc" {
   source = "./modules/vpc"
-  
+
   name               = "my-vpc"
   cidr_block         = "10.0.0.0/16"
   availability_zones = ["us-east-1a", "us-east-1b"]
-  
+
   create_public_subnets  = true
   create_private_subnets = true
   enable_nat_gateway     = true
-  
+
   tags = {
     Environment = "production"
   }
@@ -524,8 +546,8 @@ module "vpc" {
 - [ ] No plan differences after refactoring
 
 ## Related Skills
-- [Terraform code generation](https://raw.githubusercontent.com/hashicorp/agent-skills/refs/heads/main/terraform/code-generation/skills/terraform-style-guide/SKILL.md) - Style guide for the new Terraform Module
-- [Azure Verified Modules](https://raw.githubusercontent.com/hashicorp/agent-skills/refs/heads/main/terraform/code-generation/skills/azure-verified-modules/SKILL.md) - Recommended module specifications for Azure
+- [Terraform code generation](https://raw.githubusercontent.com/hashicorp/agent-skills/refs/heads/main/plugins/terraform/skills/terraform-style-guide/SKILL.md) - Style guide for the new Terraform Module
+- [Azure Verified Modules](https://raw.githubusercontent.com/hashicorp/agent-skills/refs/heads/main/plugins/terraform/skills/azure-verified-modules/SKILL.md) - Recommended module specifications for Azure
 
 ## Resources
 - [Terraform Module Development](https://developer.hashicorp.com/terraform/language/modules/develop)

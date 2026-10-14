@@ -1,9 +1,10 @@
 version: "8.1"
 description: "Breaking change patterns for Rails 8.0 → 8.1 upgrade"
 
-breaking_changes:
+upgrade_findings:
   high_priority:
     - name: "SSL configuration commented"
+      kind: "optional"
       pattern: "#.*force_ssl|#.*assume_ssl"
       exclude: ""
       search_paths:
@@ -13,15 +14,17 @@ breaking_changes:
       variable_name: "SSL_COMMENTED"
 
     - name: "pool to max_connections"
+      kind: "deprecation"
       pattern: "pool:"
       exclude: "max_connections"
       search_paths:
         - "config/database.yml"
-      explanation: "Rails 8.1 renames 'pool:' to 'max_connections:' in database.yml"
-      fix: "Replace pool: with max_connections: in all database configurations"
+      explanation: "Rails 8.1 renames the database config key from pool: to max_connections:. The old name is preserved as an alias and emits a deprecation warning at runtime; existing apps still boot and connect normally with pool:. activerecord/lib/active_record/database_configurations/hash_config.rb at 8.1 defines `alias :pool :max_connections` followed by `deprecate pool: :max_connections, deprecator: ActiveRecord.deprecator`. Boot only fails when both pool: and max_connections: are set with different values (Ambiguous configuration error)"
+      fix: "Rename pool: to max_connections: in every entry of config/database.yml. Do not set both keys at the same time -- that path raises Ambiguous configuration"
       variable_name: "POOL_RENAME"
 
     - name: "bundler-audit required"
+      kind: "optional"
       pattern: "bundler-audit"
       exclude: ""
       search_paths:
@@ -32,27 +35,44 @@ breaking_changes:
       fix: "Add bundler-audit gem and bin/brakeman script"
       variable_name: "BUNDLER_AUDIT"
 
+    - name: "Routes drawn with multiple paths (removed)"
+      kind: "breaking"
+      pattern: "^\\s*(?:get|post|put|patch|delete|options|match)[\\s(]+(?:\"[^\"\\n]*\"|'[^'\\n]*'|:\\w+[?!]?)\\s*,\\s*(?:\"[^\"\\n]*\"|'[^'\\n]*'|:\\w+[?!]?)(?![\\w?!]|\\s*=>)"
+      exclude: ""
+      search_paths:
+        - "config/routes.rb"
+        - "config/routes/"
+      explanation: "Rails 8.1 removes passing more than one path to one route call (e.g. `get '/old1', '/old2', to: 'foo#bar'`, or `get :preview, :download` inside a `member` block). 8.0 drew one route per path and warned 'Mapping a route with multiple paths is deprecated'; 8.1 raises `ArgumentError: Wrong number of arguments (expect 1, got 2)` while drawing routes, so the app does not boot (actionpack 8.1 lib/action_dispatch/routing/mapper.rb, `match`). The array form `get ['/a', '/b']` is a different shape: it draws no route on 8.0 or 8.1 and is not flagged. Paths held in variables (`get path_a, path_b`) are missed. Was deprecated at 8.0 (see rails-80-patterns.yml ROUTES_MULTIPLE_PATHS)"
+      fix: "Write one call per path: `get '/old1', to: 'foo#bar'` and `get '/old2', to: 'foo#bar'`, or `%w[/old1 /old2].each { |p| get p, to: 'foo#bar' }`. Works on 8.0 too"
+      variable_name: "ROUTES_MULTIPLE_PATHS_REMOVED"
+
   medium_priority:
     - name: "Semicolon query separator"
-      pattern: "param.*;"
-      exclude: ""
+      kind: "breaking"
+      pattern: "[?&][A-Za-z_][\\w\\[\\]%.-]*=([^\\s'\"&;#<>=(){}!|]|#\\{[^}\\n]*\\})*;[A-Za-z_][\\w\\[\\]%.-]*="
+      exclude: "\\A\\s*(#(?![{\\w])|//|\\*|<%#|-#)"
       search_paths:
         - "app/"
         - "lib/"
-      explanation: "Rails 8.1 removes semicolon as query parameter separator"
-      fix: "Replace semicolons (;) with ampersands (&) in query strings"
+        - "config/"
+        - "spec/"
+        - "test/"
+      explanation: "Rails 8.0's ActionDispatch::QueryParser still split a query string, and a form-urlencoded request body, on `;` when the app ran Rack 2 (Rack's own separator then included `;`), with a deprecation warning: `/search?q=test;page=2` gave `{\"q\"=>\"test\", \"page\"=>\"2\"}`. Rails 8.1 splits on `&` only, so the same URL gives `{\"q\"=>\"test;page=2\"}`: nothing raises, `page` is just missing. An app that already ran Rack 3 on 8.0 got the new behavior at that hop, so this bites only apps that reach 8.1 from Rack 2. The pattern flags a query-string literal with a `;` between two `key=` pairs (in links, redirects, API clients and request specs). Commented lines are skipped. It cannot see URLs built at runtime or sent by outside clients. For those, search the request log for `Started` lines whose query string holds a `;` between two `key=` pairs, or the proxy's access log; the 8.0 deprecation warning is no help in production, where the generated config sets `report_deprecations = false`"
+      fix: "Replace the `;` with `&` in query strings the app builds or links to (`/search?q=test&page=2`). For URLs that outside clients send with `;`, there is no setting that restores the split: rewrite the query string in a Rack middleware before Rails parses it, or ask the clients to switch"
       variable_name: "SEMICOLON_SEPARATOR"
 
     - name: "Sidekiq adapter built-in"
+      kind: "deprecation"
       pattern: "sidekiq-rails|activejob-sidekiq"
       exclude: ""
       search_paths:
         - "Gemfile"
-      explanation: "Rails 8.1 removes built-in Sidekiq adapter"
-      fix: "Use sidekiq gem directly (6.5+) which includes its own adapter"
+      explanation: "Rails 8.1 deprecates the built-in ActiveJob Sidekiq adapter (NOT removed yet). activejob/lib/active_job/queue_adapters/sidekiq_adapter.rb is still present at 8.1; the activejob/CHANGELOG.md entry says 'Deprecate built-in `sidekiq` adapter. If you're using this adapter, upgrade to `sidekiq` 7.3.3 or later to use the `sidekiq` gem's adapter.' Apps continue to function with a deprecation warning"
+      fix: "Upgrade to sidekiq 7.3.3+ and use the gem's own adapter, which the gem registers when loaded. The Rails-bundled adapter is scheduled for removal in a later version"
       variable_name: "SIDEKIQ_ADAPTER"
 
     - name: "SuckerPunch adapter"
+      kind: "breaking"
       pattern: "sucker_punch"
       exclude: ""
       search_paths:
@@ -63,6 +83,7 @@ breaking_changes:
       variable_name: "SUCKER_PUNCH"
 
     - name: "Azure storage service"
+      kind: "breaking"
       pattern: "azure_storage|microsoft_azure"
       exclude: ""
       search_paths:
@@ -72,17 +93,42 @@ breaking_changes:
       fix: "Switch to S3, GCS, or Disk storage. Or use azure-storage gem directly."
       variable_name: "AZURE_STORAGE"
 
+    - name: "Benchmark.ms (removed)"
+      kind: "breaking"
+      pattern: "\\bBenchmark\\.ms\\b"
+      exclude: ""
+      search_paths:
+        - "app/"
+        - "lib/"
+      explanation: "Rails 8.1 removes the `Benchmark.ms` core extension. activesupport/CHANGELOG.md: 'Remove deprecated `Benchmark.ms` method. It is now defined in the `benchmark` gem.' activesupport 8.1 also drops its `benchmark` gem dependency. The `benchmark` gem defines `Benchmark.ms` only from 0.5.0 (0.4.x, the Ruby 3.4 default, does not), so calls raise NoMethodError unless the app bundles benchmark 0.5.0 or later. Was deprecated at 8.0 (see rails-80-patterns.yml BENCHMARK_MS)"
+      fix: "Replace `Benchmark.ms { ... }` with `ActiveSupport::Benchmark.realtime(:float_millisecond) { ... }`, which exists from Rails 8.0.0 and returns the same Float of milliseconds. Or add `gem 'benchmark', '>= 0.5.0'` to the Gemfile. Both work on 8.0 too"
+      variable_name: "BENCHMARK_MS_REMOVED"
+
+    - name: "ActiveSupport::Configurable"
+      kind: "deprecation"
+      pattern: "ActiveSupport::Configurable"
+      exclude: ""
+      search_paths:
+        - "app/"
+        - "lib/"
+        - "config/"
+      explanation: "Rails 8.1 deprecates ActiveSupport::Configurable. activesupport/CHANGELOG.md: 'Deprecate `ActiveSupport::Configurable`.' activesupport 8.1 lib/active_support/configurable.rb warns once, when the module is first loaded: 'ActiveSupport::Configurable is deprecated without replacement, and will be removed in Rails 8.2. You can emulate the previous behavior with `class_attribute`.' The module still works in 8.1"
+      fix: "Replace `include ActiveSupport::Configurable` / `extend ActiveSupport::Configurable` with explicit `class_attribute` declarations or a small custom configuration object. The replacement is mechanical for most use sites"
+      variable_name: "AS_CONFIGURABLE"
+
   low_priority:
-    - name: "MySQL unsigned types"
-      pattern: "unsigned:\\s*true"
+    - name: "MySQL unsigned_float / unsigned_decimal short-hand"
+      kind: "breaking"
+      pattern: "\\bunsigned_(float|decimal)\\b"
       exclude: ""
       search_paths:
         - "db/migrate/"
-      explanation: "MySQL unsigned integer types deprecation notice in Rails 8.1"
-      fix: "Use check constraints instead of unsigned integers"
+      explanation: "Rails 8.1 removes the t.unsigned_float and t.unsigned_decimal short-hand column methods that were deprecated in 8.0 (activerecord/CHANGELOG.md: 'Remove deprecated `:unsigned_float` and `:unsigned_decimal` column methods for MySQL.'). Migrations using these short-hands raise NoMethodError. Background: as of MySQL 8.0.17, the UNSIGNED attribute is itself deprecated for FLOAT / DOUBLE / DECIMAL columns at the database level, so Rails no longer ships the convenience methods. Note: the pattern was previously matching `unsigned: true`, which is the column-option form on integer / bigint columns and is unrelated and unaffected"
+      fix: "Replace t.unsigned_float :amount with t.float :amount, unsigned: true (still allowed on integer / bigint via the column option) or, for DECIMAL, use a CHECK constraint on the value range. Audit each migration that used the short-hand"
       variable_name: "MYSQL_UNSIGNED"
 
     - name: "gitignore config keys"
+      kind: "optional"
       pattern: "\\.key$"
       exclude: "/config/"
       search_paths:
@@ -90,6 +136,47 @@ breaking_changes:
       explanation: "Rails 8.1 changes .gitignore to use /config/*.key"
       fix: "Update .gitignore to use /config/*.key instead of *.key"
       variable_name: "GITIGNORE_KEYS"
+
+    - name: "ignore_leading_brackets config"
+      kind: "deprecation"
+      pattern: "ignore_leading_brackets"
+      exclude: ""
+      search_paths:
+        - "config/"
+      explanation: "Rails 8.1 deprecates Rails.application.config.action_dispatch.ignore_leading_brackets. actionpack/CHANGELOG.md: 'Deprecate `Rails.application.config.action_dispatch.ignore_leading_brackets`.' The setting is paired with an 8.1 removal of the leading-bracket-skipping behavior in the parameter parser; existing config lines emit a deprecation warning and have no effect. On 8.0 the parser also skipped leading brackets by default under Rack 2; on 8.1 it never does, so a Rack 2 app with `[user][name]` style params changes even without this config line"
+      fix: "Remove the assignment from config/application.rb / environment configs. Audit form names in views for legacy leading-bracket params (e.g. `name=\"[user][name]\"`) and rewrite to the standard `name=\"user[name]\"` shape"
+      variable_name: "IGNORE_LEADING_BRACKETS_CONFIG"
+
+    - name: "to_time_preserves_timezone config"
+      kind: "deprecation"
+      pattern: "to_time_preserves_timezone"
+      exclude: "^\\s*#"
+      search_paths:
+        - "config/"
+      explanation: "Rails 8.1 deprecates config.active_support.to_time_preserves_timezone. activesupport/CHANGELOG.md: 'Deprecate `config.active_support.to_time_preserves_timezone`.' Tied to the broader 8.1 change that #to_time always preserves the receiver timezone (the legacy 'preserve system local time' behavior is gone). Setting the config on 8.1 prints a deprecation warning and has no effect. On 8.0, `load_defaults` below 8.0 left it at `:offset`, so those apps also see `to_time` keep the full zone instead of only the offset after the bump"
+      fix: "Remove the assignment from config/application.rb / environment configs. If app code depends on Time#to_time returning system-local time, audit those call sites; #to_time now always preserves the receiver's timezone"
+      variable_name: "TO_TIME_PRESERVES_TIMEZONE_CONFIG"
+
+    - name: "strict_query_string_separator config"
+      kind: "deprecation"
+      pattern: "strict_query_string_separator"
+      exclude: "\\A\\s*#"
+      search_paths:
+        - "config/"
+      explanation: "`config.action_dispatch.strict_query_string_separator` chose, on Rails 8.0 with Rack 2, whether a `;` still split the query string. Rails 8.1 always splits on `&` only, so the setting has no effect, and both its reader and writer emit a deprecation warning saying it will be removed in Rails 8.2"
+      fix: "Delete the line. If it was set to `false` to keep `;` working, see the \"Semicolon Query Separator Removed\" entry in the 8.0 to 8.1 guide: that behavior is gone on 8.1"
+      variable_name: "STRICT_QUERY_STRING_SEPARATOR_CONFIG"
+
+    - name: "String#mb_chars / Multibyte::Chars"
+      kind: "deprecation"
+      pattern: "\\.mb_chars\\b|ActiveSupport::Multibyte::Chars"
+      exclude: ""
+      search_paths:
+        - "app/"
+        - "lib/"
+      explanation: "Rails 8.1 deprecates String#mb_chars and ActiveSupport::Multibyte::Chars. activesupport/CHANGELOG.md: 'Deprecate `String#mb_chars` and `ActiveSupport::Multibyte::Chars`. These APIs are a relic of the Ruby 1.8 days when Ruby strings weren't encoding aware.' Modern Ruby strings handle Unicode natively. NOISY REGEX: `.mb_chars` may match unrelated method calls of the same name (uncommon)"
+      fix: "Drop `.mb_chars` from method chains: `str.mb_chars.upcase` → `str.upcase`. Modern Ruby's String methods handle multibyte correctly without the wrapper. For ActiveSupport::Multibyte::Chars instantiations, switch to plain String"
+      variable_name: "MB_CHARS"
 
 dependencies:
   bundler_audit:

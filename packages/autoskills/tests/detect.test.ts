@@ -382,15 +382,15 @@ describe("detectTechnologies", () => {
   });
 
   it("detects combos when multiple technologies match", () => {
-    writePackageJson(tmp.path, { dependencies: { expo: "^52.0.0", tailwindcss: "^4.0.0" } });
+    writePackageJson(tmp.path, { dependencies: { "react-hook-form": "^7.0.0", zod: "^4.0.0" } });
     const { combos } = detectTechnologies(tmp.path);
-    ok(combos.some((c) => c.id === "expo-tailwind"));
+    ok(combos.some((c) => c.id === "react-hook-form-zod"));
   });
 
   it("returns no combos when only one technology of a pair is present", () => {
-    writePackageJson(tmp.path, { dependencies: { expo: "^52.0.0" } });
+    writePackageJson(tmp.path, { dependencies: { "react-hook-form": "^7.0.0" } });
     const { combos } = detectTechnologies(tmp.path);
-    ok(!combos.some((c) => c.id === "expo-tailwind"));
+    ok(!combos.some((c) => c.id === "react-hook-form-zod"));
   });
 
   it("detects Kotlin Multiplatform from root build.gradle.kts", () => {
@@ -1532,14 +1532,14 @@ describe("detectCombos", () => {
     strictEqual(detectCombos([]).length, 0);
   });
 
-  it("detects expo + tailwind combo", () => {
-    ok(detectCombos(["expo", "tailwind"]).some((c) => c.id === "expo-tailwind"));
+  it("detects react-hook-form + zod combo", () => {
+    ok(detectCombos(["react-hook-form", "zod"]).some((c) => c.id === "react-hook-form-zod"));
   });
 
   it("detects combo even with extra technologies", () => {
     ok(
-      detectCombos(["react", "expo", "tailwind", "typescript"]).some(
-        (c) => c.id === "expo-tailwind",
+      detectCombos(["react", "react-hook-form", "zod", "typescript"]).some(
+        (c) => c.id === "react-hook-form-zod",
       ),
     );
   });

@@ -21,7 +21,44 @@ Rails 7.2 introduces:
 
 ### 🔴 HIGH PRIORITY
 
-#### 1. Transaction-Aware Job Enqueuing
+#### Ruby Version Requirement
+
+**Pattern:** `RUBY_VERSION`
+
+**What Changed:**
+Rails 7.2 requires Ruby 3.1.0 or newer: the `rails` 7.2 gemspec sets `required_ruby_version >= 3.1.0`, while 7.1 accepts `>= 2.7.0`. Bundler refuses to install 7.2 on an older Ruby, so this comes before every other change. The gemspec sets no upper bound. When a Ruby released after a Rails version needs a fix, it ships in a later Rails patch release, so on a newer Ruby use the latest 7.2 patch.
+
+**Detection Pattern:**
+```ruby
+# Gemfile
+ruby "3.0.6"
+ruby "~> 3.0.6"   # below 3.1
+ruby "~> 2.7"     # below 3.0
+# not flagged: "~> 3.0" and ">= 2.7.0" still allow 3.1+
+
+# .ruby-version
+3.0.6
+
+# .tool-versions
+ruby 3.0.6
+```
+
+**Fix:**
+```ruby
+# BEFORE (Gemfile, .ruby-version and .tool-versions agree)
+ruby "3.0.6"
+
+# AFTER
+ruby "3.3.6"
+```
+
+Upgrade Ruby while the app is still on Rails 7.1, as its own step and its own deploy. 7.1 accepts any Ruby from 2.7.0 on, so both sides of the dual boot run on the new Ruby and the Rails bump no longer mixes two changes.
+
+---
+
+#### Transaction-Aware Job Enqueuing
+
+**Pattern:** `TRANSACTION_JOBS`
 
 **What Changed:**
 Jobs enqueued inside a database transaction now wait until the transaction commits before being processed.
@@ -61,7 +98,9 @@ config.active_job.enqueue_after_transaction_commit = :never
 
 ---
 
-#### 2. show_exceptions Requires Symbols
+#### show_exceptions Requires Symbols
+
+**Pattern:** `SHOW_EXCEPTIONS`
 
 **What Changed:**
 `config.action_dispatch.show_exceptions` now requires symbol values instead of booleans.
@@ -94,7 +133,9 @@ config.action_dispatch.show_exceptions = :none      # Was false
 
 ---
 
-#### 3. params Comparison Removed
+#### params Comparison Removed
+
+**Pattern:** `PARAMS_COMPARISON`
 
 **What Changed:**
 `ActionController::Parameters` no longer compares equal to `Hash`.
@@ -119,7 +160,9 @@ params[:user].to_h == some_hash
 
 ---
 
-#### 4. ActiveRecord.connection Deprecated
+#### ActiveRecord.connection Deprecated
+
+**Pattern:** `AR_CONNECTION`
 
 **What Changed:**
 `ActiveRecord::Base.connection` is deprecated.
@@ -148,7 +191,9 @@ conn.execute("SELECT 1")
 
 ---
 
-#### 5. Rails.application.secrets Removed
+#### Rails.application.secrets Removed
+
+**Pattern:** `SECRETS_REMOVED`
 
 **What Changed:**
 `Rails.application.secrets` is completely removed.
@@ -181,9 +226,35 @@ Rails.application.credentials.dig(:production, :api_key)
 
 ---
 
+#### `ActiveRecord::Migration.check_pending!` Removed
+
+**Pattern:** `MIGRATION_CHECK_PENDING_REMOVED`
+
+**What Changed:**
+`ActiveRecord::Migration.check_pending!` was deprecated in Rails 7.1 and is removed in Rails 7.2. Calling it raises `NoMethodError`. When invoked from `test_helper.rb` or `rails_helper.rb` it breaks test-suite startup; when configured by a healthcheck gem (e.g. [`rails-healthcheck`](https://github.com/linqueta/rails-healthcheck)) it instead raises at runtime on the `/healthcheck` route in production, even with no pending migration. Use `check_all_pending!`, which checks every configured database.
+
+**Detection Pattern:**
+```ruby
+# test/test_helper.rb, spec/rails_helper.rb, or config/initializers/*.rb (e.g. healthcheck gems)
+ActiveRecord::Migration.check_pending!
+```
+
+**Fix:**
+```ruby
+# BEFORE
+ActiveRecord::Migration.check_pending!
+
+# AFTER
+ActiveRecord::Migration.check_all_pending!
+```
+
+---
+
 ### 🟡 MEDIUM PRIORITY
 
-#### 6. serialize Requires Type Parameter
+#### serialize Requires Type Parameter
+
+**Pattern:** `SERIALIZE_SYNTAX`
 
 **What Changed:**
 `serialize` now requires explicit `type:` or `coder:` parameter.
@@ -208,7 +279,9 @@ serialize :preferences, coder: JSON
 
 ---
 
-#### 7. fixture_path → fixture_paths
+#### fixture_path → fixture_paths
+
+**Pattern:** `FIXTURE_PATH`
 
 **What Changed:**
 Singular `fixture_path` deprecated in favor of plural.
@@ -230,7 +303,9 @@ self.fixture_paths = ["#{Rails.root}/test/fixtures"]
 
 ---
 
-#### 8. query_constraints Deprecated
+#### query_constraints Deprecated
+
+**Pattern:** `QUERY_CONSTRAINTS`
 
 **What Changed:**
 `query_constraints` is deprecated.
@@ -243,7 +318,9 @@ has_many :posts, foreign_key: [:author_id, :author_type]
 
 ---
 
-#### 9. Mailer Test args: → params:
+#### Mailer Test args: → params:
+
+**Pattern:** `MAILER_TEST_ARGS`
 
 **What Changed:**
 Mailer assertion helpers change `args:` to `params:`.
@@ -265,7 +342,9 @@ assert_enqueued_email_with UserMailer, :welcome, params: { user: user }
 
 ---
 
-#### 10. Queue Adapter Must Support `at:` for Testing
+#### Queue Adapter Must Support `at:` for Testing
+
+**Pattern:** none (test-adapter behavior, found by running the suite)
 
 **What Changed:**
 Tests now require queue adapters to support scheduling with `at:` option.
@@ -281,7 +360,9 @@ If using custom queue adapter in tests, ensure it supports `at:` option for sche
 
 ---
 
-#### 11. alias_attribute Behavior Change
+#### alias_attribute Behavior Change
+
+**Pattern:** none (behavior change, no call shape to match)
 
 **What Changed:**
 `alias_attribute` now applies attribute methods to the aliased attribute too.
@@ -298,6 +379,24 @@ If you call `user.login_changed?` or `user.login_was`, they now work correctly. 
 
 **Note:**
 This is generally an improvement, but may affect code that relied on the previous behavior.
+
+---
+
+#### `autoload_lib` Written with `%w[]` in New Apps
+
+**Pattern:** `AUTOLOAD_LIB_SYNTAX`
+
+**What Changed:**
+Nothing in behavior. The 7.2 app generator writes `config.autoload_lib(ignore: %w[assets tasks])` where 7.1 wrote `%w(assets tasks)`. Both are the same Ruby array, so an app generated on 7.1 keeps working unchanged. The pattern is `kind: optional` and only records the difference, so `bin/rails app:update` diffs are easier to read.
+
+**Detection Pattern:**
+```ruby
+# config/application.rb
+config.autoload_lib(ignore: %w(assets tasks))
+```
+
+**Fix:**
+Optional. Switch to `%w[assets tasks]` to match the 7.2 template, or leave it.
 
 ---
 
@@ -348,11 +447,12 @@ end
 ```
 
 ### Phase 3: Fix Breaking Changes
-1. Update `show_exceptions` to use symbols
-2. Review jobs enqueued in transactions
-3. Migrate secrets to credentials
-4. Update `serialize` declarations
-5. Fix params comparisons
+1. Upgrade Ruby to 3.1 or newer on Rails 7.1 first, as its own deploy
+2. Update `show_exceptions` to use symbols
+3. Review jobs enqueued in transactions
+4. Migrate secrets to credentials
+5. Update `serialize` declarations
+6. Fix params comparisons
 
 ### Phase 4: Configuration
 ```bash
@@ -377,32 +477,16 @@ rails app:update
 
 ---
 
-## Common Issues
+## Common Issues — Quick Reference
 
-### Issue: Jobs Not Processing
+Error → section lookup for the most common errors encountered during this upgrade:
 
-**Cause:** Transaction-aware enqueuing waiting for commit
-
-**Fix:**
-Use `after_commit` callback or check transaction is committed
-
-### Issue: Invalid show_exceptions Value
-
-**Error:** `ArgumentError: Invalid show_exceptions value`
-
-**Fix:**
-```ruby
-config.action_dispatch.show_exceptions = :all  # Not true/false
-```
-
-### Issue: Secrets Method Not Found
-
-**Error:** `NoMethodError: undefined method 'secrets'`
-
-**Fix:**
-```ruby
-Rails.application.credentials.key_name
-```
+| Error | See |
+|-------|-----|
+| `bundle install` fails: `requires ruby version >= 3.1.0` | "Ruby Version Requirement" — upgrade Ruby on Rails 7.1 first |
+| Jobs enqueued inside a transaction never run | "Transaction-Aware Job Enqueuing" — enqueue from `after_commit`, or make sure the transaction commits |
+| `ArgumentError: Invalid show_exceptions value` | "show_exceptions Requires Symbols" — `:all`, `:rescuable` or `:none`, not `true` / `false` |
+| `NoMethodError: undefined method 'secrets'` | "Rails.application.secrets Removed" — `Rails.application.credentials.key_name` |
 
 ---
 

@@ -51,11 +51,7 @@ export const SKILLS_MAP: Technology[] = [
       packages: ["next"],
       configFiles: ["next.config.js", "next.config.mjs", "next.config.ts"],
     },
-    skills: [
-      "vercel-labs/next-skills/next-best-practices",
-      "vercel-labs/next-skills/next-cache-components",
-      "vercel-labs/next-skills/next-upgrade",
-    ],
+    skills: ["vercel/next.js/next-cache-components-adoption"],
   },
   {
     id: "vue",
@@ -66,7 +62,7 @@ export const SKILLS_MAP: Technology[] = [
     skills: [
       "hyf0/vue-skills/vue-debug-guides",
       "antfu/skills/vue",
-      "antfu/skills/vue-best-practices",
+      "vuejs-ai/skills/vue-best-practices",
     ],
   },
   {
@@ -212,15 +208,14 @@ export const SKILLS_MAP: Technology[] = [
       packages: ["expo"],
     },
     skills: [
-      "expo/skills/building-native-ui",
-      "expo/skills/native-data-fetching",
-      "expo/skills/upgrading-expo",
-      "expo/skills/expo-tailwind-setup",
+      "expo/skills/expo-native-ui",
+      "expo/skills/expo-data-fetching",
+      "expo/skills/expo-upgrade",
       "expo/skills/expo-dev-client",
-      "expo/skills/expo-deployment",
-      "expo/skills/expo-cicd-workflows",
-      "expo/skills/expo-api-routes",
-      "expo/skills/use-dom",
+      "expo/skills/eas-app-stores",
+      "expo/skills/eas-workflows",
+      "expo/skills/eas-hosting",
+      "expo/skills/expo-dom",
     ],
   },
   {
@@ -305,7 +300,7 @@ export const SKILLS_MAP: Technology[] = [
     detect: {
       packages: ["remotion", "@remotion/cli"],
     },
-    skills: ["remotion-dev/skills/remotion"],
+    skills: ["remotion-dev/skills/remotion-best-practices"],
   },
   {
     id: "react-router",
@@ -415,7 +410,6 @@ export const SKILLS_MAP: Technology[] = [
     skills: [
       "microsoft/github-copilot-for-azure/azure-deploy",
       "microsoft/github-copilot-for-azure/azure-ai",
-      "microsoft/github-copilot-for-azure/azure-cost",
       "microsoft/github-copilot-for-azure/azure-diagnostics",
     ],
   },
@@ -476,7 +470,7 @@ export const SKILLS_MAP: Technology[] = [
     detect: {
       packages: ["agents"],
     },
-    skills: ["cloudflare/skills/agents-sdk", "cloudflare/skills/sandbox-sdk"],
+    skills: ["cloudflare/skills/agents-sdk", "cloudflare/skills/sandbox-stable"],
   },
   {
     id: "cloudflare-ai",
@@ -597,7 +591,7 @@ export const SKILLS_MAP: Technology[] = [
     detect: {
       packages: ["elysia"],
     },
-    skills: ["elysiajs/skills/elysiajs"],
+    skills: ["elysiajs/skills/elysia"],
   },
   {
     id: "node",
@@ -644,8 +638,7 @@ export const SKILLS_MAP: Technology[] = [
       configFiles: ["deno.json", "deno.jsonc", "deno.lock"],
     },
     skills: [
-      "denoland/skills/deno-expert",
-      "denoland/skills/deno-guidance",
+      "denoland/skills/deno",
       "denoland/skills/deno-frontend",
       "denoland/skills/deno-deploy",
       "denoland/skills/deno-sandbox",
@@ -740,7 +733,7 @@ export const SKILLS_MAP: Technology[] = [
     detect: {
       packages: ["hono"],
     },
-    skills: ["yusukebe/hono-skill/hono"],
+    skills: ["honojs/skills/hono"],
   },
   {
     id: "vitest",
@@ -869,10 +862,7 @@ export const SKILLS_MAP: Technology[] = [
         patterns: ["Microsoft.AspNetCore.OpenApi", "Swashbuckle.AspNetCore"],
       },
     },
-    skills: [
-      "github/awesome-copilot/aspnet-minimal-api-openapi",
-      "dotnet/skills/minimal-api-file-upload",
-    ],
+    skills: ["github/awesome-copilot/aspnet-minimal-api-openapi"],
   },
   {
     id: "rust",
@@ -900,10 +890,9 @@ export const SKILLS_MAP: Technology[] = [
     skills: [
       "sergiodxa/agent-skills/ruby-on-rails-best-practices",
       "lucianghinda/superpowers-ruby/rails-guides",
-      "igmarin/rails-agent-skills/rails-stack-conventions",
-      "igmarin/rails-agent-skills/rails-code-review",
-      "igmarin/rails-agent-skills/rails-migration-safety",
-      "igmarin/rails-agent-skills/rails-security-review",
+      "igmarin/rails-agent-skills/apply-stack-conventions",
+      "igmarin/rails-agent-skills/review-migration",
+      "igmarin/rails-agent-skills/security-check",
       "ombulabs/claude-code_rails-upgrade-skill/rails-upgrade",
     ],
   },
@@ -913,7 +902,7 @@ export const SKILLS_MAP: Technology[] = [
     detect: {
       gems: ["redis", "sidekiq", "resque", "redis-rails"],
     },
-    skills: ["redis/agent-skills/redis-development"],
+    skills: ["redis/agent-skills/redis-core"],
   },
   {
     id: "postgres-ruby",
@@ -988,7 +977,7 @@ export const SKILLS_MAP: Technology[] = [
     detect: {
       gems: ["sidekiq"],
     },
-    skills: ["igmarin/rails-agent-skills/rails-background-jobs"],
+    skills: ["igmarin/rails-agent-skills/implement-background-job"],
   },
   {
     id: "rspec",
@@ -998,8 +987,7 @@ export const SKILLS_MAP: Technology[] = [
       configFiles: [".rspec"],
     },
     skills: [
-      "igmarin/rails-agent-skills/rspec-best-practices",
-      "igmarin/rails-agent-skills/rspec-service-testing",
+      "igmarin/rails-agent-skills/test-service",
       "lucianghinda/superpowers-ruby/test-driven-development",
     ],
   },
@@ -1197,12 +1185,6 @@ export const SKILLS_MAP: Technology[] = [
 
 export const COMBO_SKILLS_MAP: ComboSkill[] = [
   {
-    id: "expo-tailwind",
-    name: "Expo + Tailwind CSS",
-    requires: ["expo", "tailwind"],
-    skills: ["expo/skills/expo-tailwind-setup"],
-  },
-  {
     id: "react-hook-form-zod",
     name: "React Hook Form + Zod",
     requires: ["react-hook-form", "zod"],
@@ -1218,13 +1200,13 @@ export const COMBO_SKILLS_MAP: ComboSkill[] = [
     id: "react-native-expo",
     name: "React Native + Expo",
     requires: ["react-native", "expo"],
-    skills: ["expo/skills/building-native-ui", "sleekdotdesign/agent-skills/design-mobile-apps"],
+    skills: ["expo/skills/expo-native-ui", "sleekdotdesign/agent-skills/design-mobile-apps"],
   },
   {
     id: "nextjs-vercel-ai",
     name: "Next.js + Vercel AI SDK",
     requires: ["nextjs", "vercel-ai"],
-    skills: ["vercel/ai/use-ai-sdk", "vercel-labs/next-skills/next-best-practices"],
+    skills: ["vercel/ai/use-ai-sdk"],
   },
   {
     id: "nextjs-playwright",
@@ -1296,7 +1278,7 @@ export const COMBO_SKILLS_MAP: ComboSkill[] = [
     id: "expo-clerk",
     name: "Expo + Clerk",
     requires: ["expo", "clerk"],
-    skills: ["clerk/skills/clerk-expo-patterns"],
+    skills: ["clerk/skills/clerk-expo"],
   },
   {
     id: "react-react-three-fiber",
@@ -1350,10 +1332,7 @@ export const COMBO_SKILLS_MAP: ComboSkill[] = [
     id: "rails-rspec",
     name: "Ruby on Rails + RSpec",
     requires: ["rails", "rspec"],
-    skills: [
-      "igmarin/rails-agent-skills/rails-tdd-slices",
-      "igmarin/rails-agent-skills/rails-bug-triage",
-    ],
+    skills: ["igmarin/rails-agent-skills/plan-tests", "igmarin/ruby-core-skills/triage-bug"],
   },
   {
     id: "rails-sidekiq",

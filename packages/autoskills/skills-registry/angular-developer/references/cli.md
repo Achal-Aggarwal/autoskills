@@ -15,7 +15,7 @@ ng add @angular/fire
 To update the application and its dependencies (which automatically runs code migrations):
 
 ```bash
-ng update @angular/core@<latest or specific version> @angular/cli<latest or specific version>
+ng update @angular/core@<latest or specific version> @angular/cli@<latest or specific version>
 ```
 
 ## 2. Generating Code (`ng generate` or `ng g`)
@@ -25,7 +25,7 @@ Always use the CLI to generate code to ensure it adheres to Angular standards an
 | Target       | Command               | Notes                                                                                          |
 | :----------- | :-------------------- | :--------------------------------------------------------------------------------------------- |
 | Component    | `ng g c path/to/name` | Generates a component. Use `--inline-style` (`-s`) or `--inline-template` (`-t`) if requested. |
-| Service      | `ng g s path/to/name` | Generates an `@Injectable({providedIn: 'root'})` service.                                      |
+| Service      | `ng g s path/to/name` | Generates an `@Service` service.                                                               |
 | Directive    | `ng g d path/to/name` | Generates a directive.                                                                         |
 | Pipe         | `ng g p path/to/name` | Generates a pipe.                                                                              |
 | Guard        | `ng g g path/to/name` | Generates a functional route guard.                                                            |

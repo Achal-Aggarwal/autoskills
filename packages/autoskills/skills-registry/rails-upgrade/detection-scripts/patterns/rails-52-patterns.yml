@@ -1,0 +1,169 @@
+version: "5.2"
+description: "Breaking change patterns for Rails 5.1 → 5.2 upgrade"
+
+upgrade_findings:
+  high_priority:
+    - name: "ActiveModel::Dirty methods after save"
+      kind: "deprecation"
+      pattern: "\\b\\w+_(changed\\?|was)|\\.changes\\b|\\.changed\\?"
+      exclude: "saved_change_to_|attribute_before_last_save|saved_changes"
+      search_paths:
+        - "app/models/"
+        - "app/controllers/"
+        - "app/jobs/"
+      explanation: "Rails 5.2 (and 5.1) changed dirty-tracking behavior: *_changed?, *_was, .changes, .changed? return false/nil after save, even if the record was modified. This is silently wrong in production when called from after_save / after_commit callbacks, observers, or background jobs that read attribute state post-persistence. NOISY REGEX: matches all dirty-tracking calls regardless of context. Whether each match is broken depends on whether the call runs before or after commit. Audit every match to confirm pre-save context (these are still correct) versus post-save context (must migrate to saved_change_to_*, attribute_before_last_save, or saved_changes)"
+      fix: "Post-save migrations: user.name_changed? → user.saved_change_to_name?; user.name_was → user.attribute_before_last_save(:name); user.changes → user.saved_changes; user.changed? → user.saved_changes?. Pre-save uses (e.g. before_save callbacks, validations) keep the original methods"
+      variable_name: "DIRTY_TRACKING_AFTER_SAVE"
+
+    - name: "class_name option with unquoted constant"
+      kind: "breaking"
+      pattern: "(?:\\bclass_name:|:class_name\\s*=>)\\s*[A-Z][\\w:]*+(?!\\.(?:name|to_s)\\b)"
+      exclude: ""
+      search_paths:
+        - "app/models/"
+        - "lib/"
+      explanation: "Rails 5.2 removes support for passing class objects (constants) to the :class_name option on associations; doing so now raises ArgumentError ('A class was passed to `:class_name` but we are expecting a string.') when the reflection is built, which happens when the belongs_to / has_many line runs, so the model fails to load. 5.1 only warned ('Passing a class to the `class_name` is deprecated'); 5.0 accepted it silently. Matches class_name: and :class_name => followed by a constant; Foo.name and Foo.to_s are skipped. A constant that holds a string (CLASS_NAME = 'User') is also flagged, check it by hand"
+      fix: "Quote the class name: belongs_to :owner, class_name: User → belongs_to :owner, class_name: 'User'. Same applies to has_one, has_many, and has_and_belongs_to_many"
+      variable_name: "CLASS_NAME_CONSTANT"
+
+    - name: "error_on_ignored_order_or_limit config (renamed)"
+      kind: "breaking"
+      pattern: "error_on_ignored_order_or_limit"
+      exclude: ""
+      search_paths:
+        - "config/"
+      explanation: "Rails 5.2 removes config.active_record.error_on_ignored_order_or_limit. The setting was renamed to config.active_record.error_on_ignored_order in 5.1 with a deprecated wrapper; the wrapper is gone in 5.2. Existing config lines using the old name raise NoMethodError at boot"
+      fix: "Rename the config key: config.active_record.error_on_ignored_order_or_limit = X → config.active_record.error_on_ignored_order = X"
+      variable_name: "ERROR_ON_IGNORED_ORDER_OR_LIMIT"
+
+    - name: "halt_callback_chains_on_return_false config (removed)"
+      kind: "breaking"
+      pattern: "halt_callback_chains_on_return_false"
+      exclude: ""
+      search_paths:
+        - "config/"
+      explanation: "Rails 5.2 removes ActiveSupport.halt_callback_chains_on_return_false and its setter. In 5.1 both only emitted a deprecation warning and changed nothing. The line usually sits in config/initializers/new_framework_defaults.rb, which the 5.0 generator wrote; `ActiveSupport.halt_callback_chains_on_return_false = false` there raises NoMethodError at boot. A config.active_support.halt_callback_chains_on_return_false line is skipped silently (the railtie checks respond_to?), but is dead and should go too"
+      fix: "Remove the line entirely. Removing it works on 5.1 too. A callback that still returns false to halt the chain stopped halting in 5.1 (5.0 halted with a warning); use `throw :abort`"
+      variable_name: "HALT_CALLBACK_CHAINS_ON_RETURN_FALSE"
+
+    - name: "String if:/unless: conditions on callbacks, filters and validations"
+      kind: "breaking"
+      pattern: "\\b(?:(?:prepend_|skip_)?(?:before|after|around)_\\w+|validates?(?:_\\w+)?|set_callback|skip_callback)\\b[^\\n]*?(?:\\b(?:if|unless):|:(?:if|unless)\\s*=>)\\s*\\[?\\s*['\"]"
+      exclude: "(?:^|\\s)#(?!\\{)[^\\n]*(?:\\b(?:if|unless):|:(?:if|unless)\\s*=>)\\s*\\[?\\s*['\"]"
+      search_paths:
+        - "app/models/"
+        - "app/controllers/"
+        - "lib/"
+      explanation: "Rails 5.1 warned when a string was passed to :if or :unless ('Passing string to be evaluated in :if and :unless conditional options is deprecated'). Rails 5.2 raises ArgumentError ('... is not supported. Pass a symbol for an instance method, or a lambda, proc or block, instead.') when the callback is defined, so the class fails to load. Every ActiveSupport callback goes through this check: model callbacks, controller before_action / skip_before_action, validates / validate, and set_callback / skip_callback. Matches a string or an array of strings after if: / :if =>, on the same line as the macro; a condition on a later line of a multi-line call is missed. Commented-out lines are skipped"
+      fix: "Replace the string with a symbol: `if: :record_active?` instead of `if: 'record_active?'`. For inline expressions, use a lambda: `if: -> { record_active? && ... }`"
+      variable_name: "CALLBACK_STRING_CONDITIONS"
+
+    - name: "evented_redis Action Cable adapter (removed)"
+      kind: "breaking"
+      pattern: "\\bevented_redis\\b|\\bSubscriptionAdapter::EventedRedis\\b"
+      exclude: ""
+      search_paths:
+        - "config/"
+        - "lib/"
+      explanation: "Rails 5.1 deprecated the evented_redis Action Cable adapter (a warning when the adapter is built). Rails 5.2 deletes action_cable/subscription_adapter/evented_redis.rb, so `adapter: evented_redis` in config/cable.yml raises LoadError ('Could not load the 'evented_redis' Action Cable pubsub adapter') the first time the server builds its pubsub, on the first connection or broadcast. It does not fail at boot, and a test env on the async or test adapter passes, so the error first shows in the environment that uses evented_redis. Also flags code that customizes ActionCable::SubscriptionAdapter::EventedRedis"
+      fix: "In config/cable.yml replace `adapter: evented_redis` with `adapter: redis`; the url and channel_prefix keys stay the same. The redis adapter needs only the redis gem (em-hiredis can go). Move any EventedRedis.redis_connector override to ActionCable::SubscriptionAdapter::Redis.redis_connector. The redis adapter exists in 5.1 too"
+      variable_name: "EVENTED_REDIS_ADAPTER"
+
+    - name: "connection.verify! with arguments"
+      kind: "breaking"
+      pattern: "\\.verify!(?:\\(\\s*[^)\\s]|[ \\t]+(?!(?:if|unless|and|or|rescue|do)\\b)[\\w:@$'\"])"
+      exclude: ""
+      search_paths:
+        - "app/"
+        - "config/"
+        - "lib/"
+      explanation: "The Active Record connection adapter's verify! took *ignored arguments. Rails 5.1 warns when any are passed ('Passing arguments to #verify method of the connection has no effect and has been deprecated.'); Rails 5.2 defines verify! with no parameters, so connection.verify!(0) raises ArgumentError. A call in a forking server hook (config/unicorn.rb, config/puma.rb, a job worker after_fork) is not run by the test suite, so the error can first show in production. Matches verify!( with an argument and verify! followed by an argument without parentheses. A gem's own verify!(arg) method is also flagged; check the receiver"
+      fix: "Drop the arguments: ActiveRecord::Base.connection.verify!(0) → ActiveRecord::Base.connection.verify!. The no-argument call works on 5.1 too"
+      variable_name: "CONNECTION_VERIFY_ARGUMENTS"
+
+  medium_priority:
+    - name: "Dynamic :controller / :action segments in routes"
+      kind: "deprecation"
+      pattern: "(?<=['\"/(]):(?:controller|action)(?!\\w|\\s*=>)"
+      exclude: ""
+      search_paths:
+        - "config/routes.rb"
+      explanation: "A route whose path has a :controller or :action segment (the old catch-all :controller(/:action(/:id)) shape) emits a deprecation warning when routes load, saying it will be removed in Rails 6.0. The warning exists since 5.0 and is unchanged in 5.1 and 5.2. Matches the segment inside a quoted path; the hash keys controller: / :action => are not segments and are skipped"
+      fix: "Replace dynamic segments with explicit routes: get '/admin/:controller/:action' → declare each controller/action pair explicitly with `get '/admin/users', to: 'users#index'` etc."
+      variable_name: "DYNAMIC_ROUTE_SEGMENTS"
+
+    - name: "Rails.application.secrets usage"
+      kind: "migration"
+      pattern: "Rails\\.application\\.secrets\\b"
+      exclude: ""
+      search_paths:
+        - "app/"
+        - "config/"
+        - "lib/"
+      explanation: "Rails 5.2 introduces config/credentials.yml.enc as the recommended replacement for config/secrets.yml. Rails.application.secrets still works in 5.2 but is on a deprecation track; migrating now avoids rework on the next hop"
+      fix: "Run `rails credentials:edit` to populate credentials.yml.enc, then migrate readers: Rails.application.secrets.api_key → Rails.application.credentials.api_key. config/master.key must NOT be checked into the repo"
+      variable_name: "SECRETS_USAGE"
+
+  low_priority:
+    - name: "Bootsnap gem in Gemfile (presence check)"
+      kind: "optional"
+      pattern: "gem\\s+['\"]bootsnap['\"]"
+      exclude: ""
+      search_paths:
+        - "Gemfile"
+      explanation: "Rails 5.2 ships with bootsnap as a new default for boot-time speedup. This is a presence check: a HIT means bootsnap is already configured; ABSENCE is the signal to add it. Grep cannot detect absence, so review the Gemfile manually when this pattern does not match"
+      fix: "If no match: add `gem 'bootsnap', require: false` under the top-level Gemfile, then add `require 'bootsnap/setup'` near the top of config/boot.rb. Optional but recommended"
+      variable_name: "BOOTSNAP_PRESENCE"
+
+    - name: "Erubis template handler references"
+      kind: "breaking"
+      pattern: "\\bHandlers::(?:ERB::)?Erubis\\b"
+      exclude: ""
+      search_paths:
+        - "app/"
+        - "config/"
+        - "lib/"
+      explanation: "Rails 5.1 made Erubi the default ERB implementation and kept two Erubis constants: ActionView::Template::Handlers::ERB::Erubis, and ActionView::Template::Handlers::Erubis, which warns that it is deprecated and will be removed from Rails 5.2. Rails 5.2 removes both files, so either reference raises NameError when the code loads. Direct use of the erubis gem (Erubis::Eruby) is not a Rails change and is not flagged. Most apps never reference these; custom template handlers and old gems do"
+      fix: "Replace ActionView::Template::Handlers::Erubis and ActionView::Template::Handlers::ERB::Erubis with ActionView::Template::Handlers::ERB::Erubi, which exists in 5.1 too. A subclass that relied on Erubis-only methods needs porting to Erubi's API. For a gem that references Erubis, update the gem"
+      variable_name: "ERUBIS_HANDLER"
+
+    - name: "Defining or calling quoted_id"
+      kind: "breaking"
+      pattern: "\\bdef\\s+quoted_id\\b|\\.quoted_id\\b"
+      exclude: ""
+      search_paths:
+        - "app/"
+        - "lib/"
+      explanation: "Rails 5.1's connection quote calls #quoted_id on any object that defines it, with a warning ('Defining #quoted_id is deprecated and will be ignored in Rails 5.2.'), and type_cast uses #id for such objects. Rails 5.2 drops both checks. An Active Record model is quoted by its primary key, so a custom quoted_id on a model is skipped with no error. Any other object that relied on quoted_id now raises TypeError ('can't quote Foo') when it is quoted, for example as the bind in where('owner_id = ?', owner). Calling record.quoted_id also fails: 5.1 deprecated ActiveRecord::Base#quoted_id and 5.2 removes it (NoMethodError)"
+      fix: "Pass a primitive at the call site (where('owner_id = ?', owner.id) instead of where('owner_id = ?', owner)), which works on 5.1 too, then delete quoted_id. Replace record.quoted_id with Model.connection.quote(record.id). For a model, delete the override or move the logic into a custom ActiveModel::Type"
+      variable_name: "QUOTED_ID_METHOD"
+
+    - name: "lock! / with_lock on a record with unsaved changes"
+      kind: "breaking"
+      pattern: "(?<![\\w:])(?<!def )lock!(?=[(\\s;)]|$)|(?<!def )\\bwith_lock\\b"
+      exclude: ""
+      search_paths:
+        - "app/"
+        - "lib/"
+      explanation: "Rails 5.2 raises a RuntimeError when #lock! is called on an AR record with unsaved changes ('Locking a record with unpersisted changes is not supported.'). Finishes the deprecation cycle that began in 5.1; before that the lock silently discarded the changes. with_lock calls lock! first, so it raises the same way. NOISY REGEX: matches every lock! and with_lock call site, with or without a receiver; most are correct usage on persisted records with no in-memory edits. Audit each match to confirm the receiver has been saved before the lock"
+      fix: "Save (or reload) before locking: record.save; record.lock!. If you intended to lock and then mutate, the correct order is record.lock! followed by the assignment + save"
+      variable_name: "LOCK_BANG_UNPERSISTED"
+
+    - name: "secret_token (legacy signing secret)"
+      kind: "deprecation"
+      pattern: "\\bsecret_token\\b"
+      exclude: ""
+      search_paths:
+        - "config/"
+        - "app/"
+        - "lib/"
+      explanation: "Rails 5.2 warns at boot whenever a secret_token is set, whether in config/secrets.yml or through Rails.application.config.secret_token (config/initializers/secret_token.rb): '`secrets.secret_token` is deprecated in favor of `secret_key_base` and will be removed in Rails 6.0.' Rails 5.1 used the same fallback with no warning. Matches every secret_token key, assignment and read. Reading or setting Rails.application.config.secret_key_base does not warn in 5.2; secrets.secret_key_base still falls back to it"
+      fix: "Make sure secret_key_base is set (config/secrets.yml works on 5.1 and 5.2; credentials and a direct ENV['SECRET_KEY_BASE'] read are 5.2 only), then delete secret_token and config/initializers/secret_token.rb. While both are set, Rails upgrades cookies signed with the old token; once the token is gone, users whose cookie was never upgraded are logged out once"
+      variable_name: "LEGACY_SECRET_TOKEN"
+
+dependencies:
+  bootsnap:
+    check: false
+    gem_name: "bootsnap"
+    message: "New Rails 5.2 default; opt-in performance improvement that caches expensive boot-time computations (file path resolution, YAML/JSON parses, ISeq compilation)"
+    url: "https://github.com/Shopify/bootsnap"

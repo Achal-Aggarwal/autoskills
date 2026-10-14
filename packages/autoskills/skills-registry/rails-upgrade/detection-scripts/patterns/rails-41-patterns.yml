@@ -1,19 +1,21 @@
 version: "4.1"
 description: "Breaking change patterns for Rails 4.0 → 4.1 upgrade"
 
-breaking_changes:
+upgrade_findings:
   high_priority:
-    - name: "Dynamic finders (find_all_by / find_last_by / scoped_by / find_by)"
-      pattern: "\\.(find_all_by_|find_last_by_|scoped_by_|find_by_)[a-zA-Z_0-9]+!?"
-      exclude: "\\.find_by\\s*\\("
+    - name: "Dynamic finders (find_all_by / find_last_by / scoped_by)"
+      kind: breaking
+      pattern: "(?<![\\w:\"'#])(?<!def )(?<!def self\\.)(find_all_by_|find_last_by_|scoped_by_)\\w+"
+      exclude: ""
       search_paths:
         - "app/"
         - "lib/"
-      explanation: "Rails 4.1 removed the activerecord-deprecated_finders dependency. find_all_by_*, find_last_by_*, scoped_by_*, and find_by_* (including find_by_*!) no longer work"
-      fix: "Rewrite: find_all_by_* → where(col: value); find_last_by_* → where(col: value).last; scoped_by_* → where(col: value); find_by_<col> → find_by(col: value); find_by_<col>! → find_by!(col: value). As a short-term bridge, add gem 'activerecord-deprecated_finders'"
+      explanation: "Rails 4.1 removed the activerecord-deprecated_finders dependency, which is where find_all_by_*, find_last_by_* and scoped_by_* were defined, so they raise NoMethodError. Calls with or without a receiver are flagged; `def self.find_all_by_*` (the app's own method) is not. find_by_* and find_by_*! are not flagged: Rails 4.1 core still defines them (ActiveRecord::DynamicMatchers::FindBy and FindByBang). The dynamic find_or_create_by_* / find_or_initialize_by_* forms are FIND_OR_X_BY_DYNAMIC"
+      fix: "Rewrite: find_all_by_* → where(col: value); find_last_by_* → where(col: value).last; scoped_by_* → where(col: value). Leave find_by_* and find_by_*! alone, they still work on 4.1. As a short-term bridge, add gem 'activerecord-deprecated_finders', require: 'active_record/deprecated_finders' (a bare gem line is not loaded on 4.1 unless the app requires active_record/deprecated_finders itself, see DEPRECATED_FINDERS_AUTOREQUIRE)"
       variable_name: "DYNAMIC_FINDERS"
 
     - name: "Dynamic find_or_initialize_by_* / find_or_create_by_*"
+      kind: breaking
       pattern: "\\.(find_or_initialize_by_|find_or_create_by_)[a-zA-Z_0-9]+"
       exclude: ""
       search_paths:
@@ -24,6 +26,7 @@ breaking_changes:
       variable_name: "FIND_OR_X_BY_DYNAMIC"
 
     - name: "return inside inline callback block"
+      kind: breaking
       pattern: "^\\s*(before_|after_|around_)(save|create|update|destroy|validation|commit|rollback|initialize|find|touch)\\b.*\\{[^}]*\\breturn\\b"
       exclude: ""
       search_paths:
@@ -35,6 +38,7 @@ breaking_changes:
       variable_name: "CALLBACK_RETURN"
 
     - name: "Implicit join reference in includes+where string"
+      kind: breaking
       pattern: "\\.includes\\([^)]+\\)[^\\n]*\\.where\\(\\s*['\"][a-z_][a-z_0-9]*\\."
       exclude: "\\.references\\(|\\.eager_load\\("
       search_paths:
@@ -45,6 +49,7 @@ breaking_changes:
       variable_name: "IMPLICIT_JOIN_REFERENCES"
 
     - name: "store_accessor on json/hstore column (PG key semantics)"
+      kind: breaking
       pattern: "^\\s*store_accessor\\s+:"
       exclude: ""
       search_paths:
@@ -54,6 +59,7 @@ breaking_changes:
       variable_name: "PG_JSON_HSTORE_KEYS"
 
     - name: "default_scope in models"
+      kind: breaking
       pattern: "^\\s*default_scope\\b"
       exclude: ""
       search_paths:
@@ -62,19 +68,214 @@ breaking_changes:
       fix: "Audit each scope on models with default_scope. Use unscope(where: :col) or rewhere(col: value) where a scope is supposed to override the default"
       variable_name: "DEFAULT_SCOPE"
 
+    - name: "cache_digests gem (backport now in core)"
+      kind: breaking
+      pattern: "\\bcache_digests\\b|\\bCacheDigests\\b"
+      exclude: "^\\s*#|unless\\s+NextRails\\.next\\?"
+      search_paths:
+        - "Gemfile"
+        - "Gemfile.lock"
+        - "app/"
+        - "lib/"
+        - "config/"
+      explanation: "The cache_digests gem backported cache digests to Rails 4.0; Rails 4.1 ships them in core as ActionView::Digestor. The gem does not just go unused, it collides: actionview's action_view/tasks/dependencies.rake declares `class CacheDigests` inside a `namespace :cache_digests do` block, and a Rake namespace does not scope Ruby constants, so that defines top-level ::CacheDigests while the gem defines `module CacheDigests`. Class vs module on one constant raises `TypeError: CacheDigests is not a class` while Rails loads its rake tasks. The blast radius is every rake invocation, not one task — asset precompile, db tasks, and any CI step shelling out to rake all fail before running. It does not reproduce under `rails runner` or the test suite, because neither loads rake tasks, so a boot smoke test and a green suite can both pass while CI is entirely red"
+      fix: "Gate the gem out of the 4.1 bundle rather than delete it while the current bundle is still 4.0 and depends on it: `gem 'cache_digests' unless NextRails.next?`. Then confirm no first-party code calls the gem API, because core's is not call-compatible: CacheDigests::TemplateDigestor.digest(name, format, finder, options) (positional) became ActionView::Digestor.digest(name:, finder:, dependencies:, partial:) (single options hash); cache_prefix and the swappable cache accessor are gone; the ['v3', 'key'] explicitly-versioned cache-key form is gone, leaving only skip_digest: true; view_cache_dependency survives unchanged in ActionView::Helpers::CacheHelper. Core's ERB dependency tracker also detects more dependencies than the gem's (it parses layout: keys and method chains), so fragment digests can shift — that is a cold fragment cache on first deploy, not an error. A hit in Gemfile.lock with nothing in the Gemfile means another gem pulls cache_digests in transitively — run `bundle why cache_digests` and gate or upgrade that parent gem instead. Delete cache_digests outright once the current Rails is 4.1"
+      variable_name: "CACHE_DIGESTS_BACKPORT"
+
+    - name: "Association :conditions option"
+      kind: breaking
+      pattern: "(has_many|has_one|belongs_to|has_and_belongs_to_many).*:?conditions(:|\\s*=>)"
+      exclude: ""
+      search_paths:
+        - "app/models/"
+      explanation: "Rails 4.1 no longer depends on activerecord-deprecated_finders, the gem that kept :conditions working (with a deprecation warning) on 4.0. Without it, has_many / has_one / belongs_to raise `ArgumentError: Unknown key: :conditions` when the model class loads, so boot, eager loading and every test that touches the model fail. has_and_belongs_to_many does not raise: 4.1 rebuilds it as has_many :through and passes on only a fixed list of options, so :conditions is dropped with no warning and the association returns every joined row, with or without the gem. With the gem on Ruby 2.3+, a Hash-valued :conditions is lost too: the gem treats any value that responds to to_proc as a proc, Hash#to_proc exists since Ruby 2.3, and the conditions evaluate to where(nil). String, Array and proc values still apply. The pattern only sees options on the same line as the macro"
+      fix: "Move the conditions into a scope lambda: has_many :active_items, -> { where(active: true) }, class_name: 'Item'. The lambda form works on 4.0 and 4.1, so it can land before the bump, and it is the only form that filters a has_and_belongs_to_many on 4.1. A proc :conditions ran against the owner; the lambda runs against the relation and receives the owner as its argument, so has_many :items, conditions: proc { ['account_id = ?', account_id] } becomes has_many :items, ->(owner) { where(account_id: owner.account_id) }. As a short-term bridge, gem 'activerecord-deprecated_finders' restores :conditions on has_many / has_one / belongs_to; it does not fix habtm or a Hash value on Ruby 2.3+"
+      variable_name: "ASSOCIATION_CONDITIONS"
+
+    - name: "Association :order option"
+      kind: breaking
+      pattern: "(has_many|has_one|belongs_to|has_and_belongs_to_many).*[^_]:?order(:|\\s*=>)"
+      exclude: ""
+      search_paths:
+        - "app/models/"
+      explanation: "Rails 4.1 no longer depends on activerecord-deprecated_finders, the gem that kept :order working (with a deprecation warning) on 4.0. Without it, has_many and belongs_to raise `ArgumentError: Unknown key: :order` when the model class loads, so boot, eager loading and every test that touches the model fail. Two shapes fail silently instead. has_one still lists :order as a valid key but no longer applies it, so it returns whichever row the database hands back first. has_and_belongs_to_many drops :order, because 4.1 rebuilds it as has_many :through and passes on only a fixed list of options; the gem does not change this. Neither raises nor warns. The pattern only sees options on the same line as the macro"
+      fix: "Move the order into a scope lambda: has_many :items, -> { order('position ASC') }; has_one :latest_comment, -> { order('created_at DESC') }, class_name: 'Comment'. The lambda form works on 4.0 and 4.1, so it can land before the bump, and it is the only form that orders a has_one or a has_and_belongs_to_many on 4.1. As a short-term bridge, gem 'activerecord-deprecated_finders' restores :order on has_many / has_one / belongs_to; it does not help habtm"
+      variable_name: "ASSOCIATION_ORDER"
+
+    - name: "Association :uniq option"
+      kind: breaking
+      pattern: "(has_many|has_one|belongs_to|has_and_belongs_to_many).*:?uniq(:|\\s*=>)"
+      exclude: ""
+      search_paths:
+        - "app/models/"
+      explanation: "Rails 4.1 no longer depends on activerecord-deprecated_finders, the gem that kept :uniq working (with a deprecation warning) on 4.0. Without it, has_many, has_one and belongs_to raise `ArgumentError: Unknown key: :uniq` when the model class loads, so boot, eager loading and every test that touches the model fail. has_and_belongs_to_many does not raise: 4.1 rebuilds it as has_many :through and passes on only a fixed list of options, so :uniq is dropped with no warning and the query loses its DISTINCT, with or without the gem. Duplicate join rows then come back as duplicate records. The pattern only sees options on the same line as the macro"
+      fix: "Move it into a scope lambda: has_many :tags, -> { distinct }, through: :taggings. distinct exists on 4.0 (uniq is its alias there), so the rewrite can land before the bump, and the lambda form is the only one that de-duplicates a has_and_belongs_to_many on 4.1. As a short-term bridge, gem 'activerecord-deprecated_finders' restores :uniq on has_many / has_one / belongs_to; it does not help habtm"
+      variable_name: "ASSOCIATION_UNIQ"
+
+    - name: "Association :readonly option"
+      kind: breaking
+      pattern: "(has_many|has_one|belongs_to|has_and_belongs_to_many).*:?readonly(:|\\s*=>)"
+      exclude: ""
+      search_paths:
+        - "app/models/"
+      explanation: "Rails 4.1 no longer depends on activerecord-deprecated_finders, the gem that kept :readonly working (with a deprecation warning) on 4.0. Without it, has_many (with or without :through), has_one and belongs_to raise `ArgumentError: Unknown key: :readonly` when the model class loads, so boot, eager loading and every test that touches the model fail. has_and_belongs_to_many does not raise: 4.1 rebuilds it as has_many :through and passes on only a fixed list of options, so :readonly is dropped with no warning, with or without the gem. The pattern only sees options on the same line as the macro"
+      fix: "readonly: true becomes a scope lambda: has_many :tags, -> { readonly }, through: :taggings. readonly: false can usually just be deleted: Rails 4.1 removed implicit_readonly, so records loaded through a join are no longer marked readonly and there is nothing left to undo. If the association needs to stay writable on 4.0 too, use -> { readonly(false) } instead. The lambda form works on 4.0 and 4.1. As a short-term bridge, gem 'activerecord-deprecated_finders' restores :readonly on has_many / has_one / belongs_to; it does not help habtm"
+      variable_name: "ASSOCIATION_READONLY"
+
+    - name: "activerecord-deprecated_finders in the Gemfile without an explicit require"
+      kind: breaking
+      pattern: "^\\s*gem\\s+[\"']activerecord-deprecated_finders[\"'](?!(?:[^#\\n]|#(?!\\s)|,[ \\t]*\\n)*?:?require(:|\\s*=>)\\s*[\"']active_record/deprecated_finders[\"'])"
+      exclude: ""
+      search_paths:
+        - "Gemfile"
+      explanation: "Rails 4.0 lists activerecord-deprecated_finders as a dependency and active_record.rb requires it, so on 4.0 it loads whether or not the Gemfile mentions it. Rails 4.1 drops both. Adding the gem back to the Gemfile as a bridge is not enough on its own: the gem's only entry file is `active_record/deprecated_finders.rb`, and Bundler.require tries `activerecord-deprecated_finders` and then `activerecord/deprecated_finders`, finds neither, and moves on without an error. The gem ends up in the bundle but never loaded, so everything it was meant to bridge still fails on 4.1: find_all_by_*, find_last_by_*, scoped_by_*, the dynamic find_or_create_by_* / find_or_initialize_by_* forms, find(:all / :first / :last), finder options on find / first / last / calculations, update_all with conditions, and the association :conditions / :order / :include / :uniq / :readonly options. The pattern flags a `gem 'activerecord-deprecated_finders'` line whose `require:` is not the string `active_record/deprecated_finders`: no `require:` at all, `require: false`, which leaves it unloaded the same way, or another string such as `require: 'activerecord-deprecated_finders'`, which Bundler cannot load either. A `require:` inside a trailing comment does not count; one on a continuation line after a trailing comma does. Gemfile.next is not searched: next_rails creates it as a symlink to Gemfile, so it would report every site twice. It only reads the Gemfile, so it cannot see a manual `require \"active_record/deprecated_finders\"` elsewhere (config/application.rb, an initializer); such an app loads the gem and is flagged anyway"
+      fix: "First search for a manual require: `grep -rn \"active_record/deprecated_finders\" config lib`. If one runs at boot, the gem is loaded and nothing needs to change. Otherwise, if the call sites are not migrated yet, name the entry file: `gem 'activerecord-deprecated_finders', require: 'active_record/deprecated_finders'`. It is harmless on 4.0, which loads the gem anyway, so the same line works on both sides of a dual boot. Better, once the call sites are migrated, remove the gem. `find_by_*` and `find_by_*!` are still in Rails 4.1 core and do not need it"
+      variable_name: "DEPRECATED_FINDERS_AUTOREQUIRE"
+
+    - name: "update_all with a conditions (or options) argument"
+      kind: breaking
+      pattern: "(?<!def )(?<!def self\\.)\\bupdate_all(?:\\(\\s*|[ \\t]+)(?:\\{[^{}]*\\}|\\[[^\\[\\]]*\\]|\"[^\"\\n]*\"|'[^'\\n]*'|(?:@{1,2}|::)?\\w+(?:(?:\\.|::)\\w+)*[!?]?(?:\\([^()\\n]*\\))?(?![\\w:]))\\s*,"
+      exclude: "\\A\\s*#"
+      search_paths:
+        - "app/"
+        - "lib/"
+        - "spec/"
+        - "test/"
+      explanation: "Rails 4.0 core already defines `Relation#update_all(updates)` with one argument. The two- and three-argument forms, `update_all(updates, conditions)` and `update_all(updates, conditions, limit: n, order: x)`, only kept working on 4.0 because activerecord-deprecated_finders, a 4.0 dependency, wraps update_all and warns `Relation#update_all with conditions is deprecated`. Rails 4.1 drops that dependency, so the call raises `ArgumentError: wrong number of arguments (2 for 1)`. The pattern is the same as the 4.0 hop's UPDATE_ALL_TWO_ARG: it flags an update_all, with or without parentheses, whose first argument (a hash literal, a string, an array, or a variable or method call) is followed by a comma, and skips `def update_all` and commented-out lines, so the single-argument form, including a keyword hash like `update_all(a: 1, b: 2)`, is not flagged. It also matches a call split across lines. The multi-line reach needs the whole-file scanner (detection-scripts/scan_patterns.rb), which matches file content; a line-based search such as grep only sees calls that fit on one line. Misses: a first argument that is a hash with a nested hash literal, or a method call with nested parentheses"
+      fix: "Move the conditions into a where chain: `Model.update_all(updates, conditions)` becomes `Model.where(conditions).update_all(updates)`; `update_all(updates, conditions, limit: 10, order: :id)` becomes `where(conditions).order(:id).limit(10).update_all(updates)`. Keep the condition's shape as written (hash, string, or array). The chained form works on Rails 3.2, 4.0 and 4.1, so the rewrite can ship before the bump. Loading activerecord-deprecated_finders on 4.1 restores the old form with a warning, but only once `active_record/deprecated_finders` is required, by the Gemfile `require:` option or a manual require (see DEPRECATED_FINDERS_AUTOREQUIRE)"
+      variable_name: "UPDATE_ALL_WITH_CONDITIONS"
+
+    - name: "Calculation with finder options (count / sum / maximum / ... with conditions:, joins:, group:)"
+      kind: breaking
+      pattern: "\\.(count|sum|average|minimum|maximum|calculate)\\((?:(?:[^()]|\\([^()]*\\))*?(?<!\\w):?(conditions|include|joins|having|select|readonly|lock|extend)|\\s*(?::\\w+|[\"'][^\"'\\n]*[\"'])\\s*,(?:[^()]|\\([^()]*\\))*?(?<!\\w):?(group|order|limit|offset|from))(:|\\s*=>)"
+      exclude: ""
+      search_paths:
+        - "app/"
+        - "lib/"
+        - "spec/"
+        - "test/"
+      explanation: "On Rails 4.0, `count`, `sum`, `average`, `minimum`, `maximum` and `calculate` accept finder options (`:conditions`, `:joins`, `:group`, `:select`, `:order`, `:include`, ...) only because activerecord-deprecated_finders, a 4.0 dependency, overrides `Relation#calculate`, applies the options as a scope, and warns `Relation#calculate with finder options is deprecated`. Rails 4.1 drops that dependency, and core 4.1 still accepts the options hash but never reads it. Nothing raises: the options are silently ignored. `Item.count(conditions: { color: \"red\" })` counts every row, `maximum(:price, group: :color)` returns one scalar instead of a Hash keyed by group, and `sum(:price, joins: ...)` sums without the join. The pattern flags a calculation call whose arguments contain one of the finder option keys, in `key:` or `:key =>` form, including a call split across lines. The keys that plain Ruby code also uses as keyword names (`:group`, `:order`, `:limit`, `:offset`, `:from`) count only after a leading column argument, as in `maximum(:price, group: :color)`, so a service object call like `TaxCalculator.calculate(order: order)` or `Shipping.calculate(from: a, to: b)` is not flagged. A calculation with only one of those keys and no column argument, such as `count(order: \"id\")`, is missed, so check calculations that pass only those keys by hand. The multi-line reach needs the whole-file scanner (detection-scripts/scan_patterns.rb), which matches file content; a line-based search such as grep only sees calls that fit on one line. A nested call's own arguments are stepped over, so `count(build_scope(select: :id))` is not flagged. A column passed as a variable (`count(col, group: :color)`) is missed for the keys that need a leading column, and any `count` / `sum` on a non-Active Record receiver that takes these keys is flagged, so read each hit. `:distinct` is a different case, see DISTINCT_COUNT_OPTION"
+      fix: "Apply each option as a chained scope before the calculation and keep the column argument as written: `count(conditions: c)` becomes `where(c).count`; `maximum(:price, group: :color)` becomes `group(:color).maximum(:price)` (still a Hash); `sum(:price, joins: :orders, conditions: c)` becomes `joins(:orders).where(c).sum(:price)`; `count(select: \"DISTINCT items.id\")` becomes `select(\"DISTINCT items.id\").count`. The chained form works on Rails 3.2, 4.0 and 4.1. Loading activerecord-deprecated_finders on 4.1 restores the old behavior with a warning, but only once `active_record/deprecated_finders` is required, by the Gemfile `require:` option or a manual require (see DEPRECATED_FINDERS_AUTOREQUIRE)"
+      variable_name: "CALCULATE_FINDER_OPTIONS"
+
+    - name: ":distinct option on count / calculate"
+      kind: breaking
+      pattern: "\\.(count|calculate)\\([^)]*(?<!\\w):?distinct(:|\\s*=>)\\s*true"
+      exclude: ""
+      search_paths:
+        - "app/"
+        - "lib/"
+        - "spec/"
+        - "test/"
+      explanation: "Rails 4.0 core deprecates the `:distinct` option on `count` / `calculate` (`The :distinct option for Relation#count is deprecated. Please use Relation#distinct instead`) but still honors it. Rails 4.1 removes the handling: the options hash is accepted and never read, so `Item.count(:owner_id, distinct: true)` runs a plain COUNT and returns the number of rows, not the number of distinct values. Nothing raises. activerecord-deprecated_finders does not restore it: its `calculate` override passes `:distinct` through to core, which ignores it. The pattern flags `distinct: true` or `:distinct => true` inside a count / calculate call, including a call split across lines. The multi-line reach needs the whole-file scanner (detection-scripts/scan_patterns.rb), which matches file content; a line-based search such as grep only sees calls that fit on one line. `count(\"DISTINCT col\")` is a different form that still works and is not flagged. A call that also carries finder options (`conditions:`, `joins:`) is flagged by CALCULATE_FINDER_OPTIONS too; fix both in one edit"
+      fix: "Move it onto the relation: `rel.count(:col, distinct: true)` becomes `rel.distinct.count(:col)`. Keep the column symbol so Rails still qualifies it with the table name. `Relation#distinct` exists on 4.0, so the rewrite works on both sides of a dual boot, and it is the name later Rails versions keep (`uniq` is deprecated in 5.0). With finder options as well: `count(:col, conditions: c, distinct: true)` becomes `where(c).distinct.count(:col)`. `distinct: false` was the default and can simply be dropped"
+      variable_name: "DISTINCT_COUNT_OPTION"
+
+    - name: "JoinDependency::JoinAssociation internals (parent_table_name, join_to)"
+      kind: breaking
+      pattern: "(\\.(?:parent_table(?:_name)?|aliased_prefix|join_dependency)\\b|JoinDependency::JoinAssociation\\b|\\bclass JoinAssociation\\b|def join_to\\b|alias_method(?:_chain)?[\\s(]*(?::\\w+\\s*,\\s*)?:\\w*join_to\\b)"
+      exclude: "^\\s*#"
+      search_paths:
+        - "app/"
+        - "lib/"
+        - "config/initializers/"
+        - "spec/"
+        - "test/"
+      explanation: "Rails 4.1 rewrote ActiveRecord::Associations::JoinDependency. JoinAssociation no longer keeps a parent, so parent_table_name (4.0 delegated it to the parent) is gone, along with parent, parent_table, join_dependency, join_type and aliased_prefix, and join_to(manager) became join_constraints(foreign_table, foreign_klass, node, join_type, tables, scope_chain, chain). Two kinds of app code reach into it. An association scope that takes an argument receives the JoinAssociation when the association is joined, so a scope that builds SQL from join.parent_table_name raises NoMethodError on 4.1 as soon as the association is used in joins. A monkeypatch on join_to fails in one of two ways: alias_method_chain :join_to raises NameError at load, while a prepended module that overrides join_to loads fine and is never called, so the SQL it added silently disappears from every join. The pattern flags calls to .parent_table_name, .parent_table, .aliased_prefix and .join_dependency, any reference to JoinDependency::JoinAssociation or a reopened class JoinAssociation, a def join_to, and a :join_to symbol given to alias_method_chain or alias_method. A `def join_to` in an unrelated class is still flagged; check the class it reopens. It does not flag .parent or .join_type, which are too common outside this class: check any association scope that takes an argument for them by hand"
+      fix: "In an association scope, aliased_table_name still exists on the 4.1 JoinAssociation, but the parent side's table name does not. Use the parent model's table name directly when the parent table is not aliased, or move the condition into a scope applied where the query is built. For a join_to patch, write a join_constraints version for 4.1 (new signature) and pick between the two with NextRails.next?. Then compare the generated SQL (to_sql) on both bundles: a patch that silently stops running changes queries without necessarily failing a test"
+      variable_name: "JOIN_DEPENDENCY_INTERNALS"
+
+    - name: "scope with a non-callable body"
+      kind: breaking
+      pattern: "^[ \\t]*scope(?:\\s+|\\s*\\(\\s*):\\w+\\s*,(?!\\s*\\(?\\s*(?:->|lambda\\b|Proc\\.|proc\\b|method\\s*\\(|[A-Z]\\w*(?:::[A-Z]\\w*)*[ \\t]*(?:$(?!\\s*\\.)|[)#])))"
+      exclude: ""
+      search_paths:
+        - "app/models/"
+      explanation: "Rails 4.1 removed support for a scope body that is not callable, such as `scope :active, where(active: true)`. Rails 4.0 accepted it with a deprecation warning. Rails 4.1 still defines the scope without complaint, but every call runs `body.call`, so the first use raises `NoMethodError: undefined method 'call'` on the stored relation. The error shows up when the scope runs, not when the model loads, so a boot check passes. The hash form (`scope :active, conditions: { active: true }`) fails the same way unless activerecord-deprecated_finders is in the bundle; that gem only rescues the hash form, not a relation body. A String body fails too: 4.0 returned the String, 4.1 calls it. A bare constant and a `method(:name)` body are skipped as likely callables"
+      fix: "Wrap the body in a lambda: `scope :active, -> { where(active: true) }`. Rewrite a hash body as query methods inside the lambda: `scope :recent, -> { order('created_at DESC') }`. The lambda form works on Rails 4.0 too, so the change can land before the version bump with no NextRails.next? branch"
+      variable_name: "SCOPE_WITHOUT_LAMBDA"
+
+    - name: "default_scope without a block"
+      kind: breaking
+      pattern: "^[ \\t]*default_scope\\b(?:(?!\\s*\\(?\\s*(?:{|->|lambda\\b|proc\\b|Proc\\.|do\\b|method\\s*\\(|[A-Z]\\w*(?:::[A-Z]\\w*)*[ \\t]*(?:$(?!\\s*\\.)|[)#])))[ \\t]*\\(?[ \\t]*[^\\s#]|[ \\t]*(?:\\([ \\t]*\\))?[ \\t]*(?:#[^\\n]*)?$)"
+      exclude: ""
+      search_paths:
+        - "app/models/"
+      explanation: "Rails 4.1 raises `ArgumentError: Support for calling #default_scope without a block is removed` when `default_scope` gets a relation or a hash instead of a block or lambda, such as `default_scope where(deleted_at: nil)` or `default_scope order: 'name'`. Rails 4.0 accepted both with a deprecation warning. The raise happens while the class body runs, so the model fails to load. activerecord-deprecated_finders keeps the hash form working with a warning, but not a relation argument. A bare `default_scope` with no argument and no block raises the same way. A constant or a `method(:name)` argument is skipped as a likely callable"
+      fix: "Pass a block: `default_scope { where(deleted_at: nil) }`, and rewrite a hash as query methods: `default_scope { order(:name) }`. The block form works on Rails 4.0 too, so the change can land before the version bump with no NextRails.next? branch. A `def self.default_scope` class method override is not affected"
+      variable_name: "DEFAULT_SCOPE_WITHOUT_BLOCK"
+
+    - name: "scope named after an Active Record class method"
+      kind: breaking
+      pattern: "^\\s*scope(?:\\s+|\\s*\\(\\s*):(find|take|take!|first|first!|last|last!|exists\\?|any\\?|many\\?|second|second!|third|third!|fourth|fourth!|fifth|fifth!|forty_two|forty_two!|first_or_create|first_or_create!|first_or_initialize|find_or_create_by|find_or_create_by!|find_or_initialize_by|find_by|find_by!|destroy|destroy_all|delete|delete_all|update|update_all|find_each|find_in_batches|select|group|order|except|reorder|limit|offset|joins|where|rewhere|preload|eager_load|includes|from|lock|readonly|having|create_with|uniq|distinct|references|none|unscope|count|average|minimum|maximum|sum|calculate|pluck|ids|all|unscoped|create|create!|find_by_sql|count_by_sql|private|public|protected|allocate|new|name|parent|superclass)(?:[\\s,)]|$)"
+      exclude: ""
+      search_paths:
+        - "app/models/"
+      explanation: "Rails 4.1 raises ArgumentError while the class body runs when a scope name matches a class method Active Record already defines: `You tried to define a scope named \"none\" on the model \"Post\", but Active Record already defined a class method with the same name.` Rails 4.0 let the scope replace the method with no warning. The model fails to load, so with eager loading the app does not boot. Rails 4.1 also rejects eight names outright, whatever the model defines: private, public, protected, allocate, new, name, parent and superclass, so `scope :public, -> { where(public: true) }` raises too. The pattern lists those eight plus every method Active Record 4.1 delegates from the model class to `all` (`uniq`, `lock`, `readonly`, `from`, `pluck`, `find_by`, ...) and `all`, `unscoped`, `create`, `find_by_sql`, `count_by_sql`; any other name that matches an Active Record class method raises the same way"
+      fix: "Rename the scope, or delete it when the built-in method already does the job. A hand-written `scope :none, -> { where('1 = 0') }` is covered by `Model.none`, available since Rails 4.0, which returns an empty chainable relation without querying the database. A scope defined in a concern raises in every model that includes the concern, so fix it once in the concern. The rename works on Rails 4.0 as well, so it needs no NextRails.next? branch"
+      variable_name: "SCOPE_NAME_COLLISION"
+
+    - name: "Association :finder_sql / :counter_sql option"
+      kind: breaking
+      pattern: "\\b(finder_sql|counter_sql)(:|\\s*=>)"
+      exclude: "^\\s*#"
+      search_paths:
+        - "app/models/"
+      explanation: "Rails 4.1 removed the `:finder_sql` and `:counter_sql` association options, which 4.0 accepted with a deprecation warning. On `has_many` they are now unknown keys: `ArgumentError: Unknown key: :finder_sql` while the class body runs, so the model fails to load. On `has_and_belongs_to_many` 4.1 passes only a fixed list of options to the `has_many :through` it builds, so the option is dropped with no error and the association runs the normal join-table query instead of the custom SQL. activerecord-deprecated_finders does not restore either option"
+      fix: "Replace the SQL with a scope on the association: `has_many :comments, -> { where(approved: true) }`, or `->(owner) { ... }` when the SQL used the owner's attributes. The scope is added to the normal foreign-key condition, while finder_sql replaced the whole query, so set `foreign_key:` / `primary_key:` when the SQL did not join on the default key. SQL that does not fit a scope becomes a method that calls `find_by_sql`. Drop `:counter_sql`; `count` / `size` then count through the rewritten association. The scope form also works on Rails 4.0, so the rewrite can land before the version bump"
+      variable_name: "FINDER_SQL"
+
+    - name: ":confirm option on link_to / button_to / submit helpers"
+      kind: breaking
+      pattern: "(link_to|button_to|button_tag|submit_tag|\\.submit|\\.button\\b)(?:(?:\\bdata:|:data\\s*=>|:?[\"']data[\"']\\s*=>)\\s*\\{(?:[^{}#]|#(?!\\{)|#?\\{[^{}]*\\})*\\}|(?!%>|(?:\\bdata:|:data\\s*=>|:?[\"']data[\"']\\s*=>)\\s*\\{)[^\\n])*?(?:(?<=[,({])[ \\t]*\\n(?:(?:\\bdata:|:data\\s*=>|:?[\"']data[\"']\\s*=>)\\s*\\{(?:[^{}#]|#(?!\\{)|#?\\{[^{}]*\\})*\\}|(?!%>|(?:\\bdata:|:data\\s*=>|:?[\"']data[\"']\\s*=>)\\s*\\{)[^\\n])*?){0,4}?(:confirm\\s*=>|\\bconfirm:|:?[\"']confirm[\"']\\s*=>)"
+      exclude: "\\bform:\\s*\\{[^}]*\\bconfirm\\b|:form\\s*=>\\s*\\{[^}]*\\bconfirm\\b"
+      search_paths:
+        - "app/"
+        - "lib/"
+      explanation: "Rails 4.0 deprecated the :confirm option on link_to, button_to, button_tag, submit_tag, image_submit_tag and the form builder's submit and button, and turned it into a data-confirm attribute. Rails 4.1 removed that handling, so the option is no longer special: the helper renders it as a plain confirm=\"...\" HTML attribute. The UJS driver only reads data-confirm, so the confirmation dialog stops appearing and the link or button acts on the first click. Nothing raises and nothing is logged, and a destructive action loses its guard. Matches the :confirm =>, confirm: and string-key \"confirm\" => spellings (4.0 stringified the keys before converting). A confirm: inside button_to's form: hash is skipped. The pattern also finds a confirm: on a continuation line of a multi-line helper call, up to four lines below it: it only moves to the next line when the current one ends in a comma or an open ( or {, and it never crosses an ERB %> tag, so a confirm: key in a later statement is not flagged. An options hash spread wider than four lines is missed, so skim views for a bare confirm: as well. A confirm key inside a data hash is skipped, whether the key is spelled data:, :data =>, 'data' => or :\"data\" =>, and the hash may hold #{} interpolation or one level of nested hash; a top-level confirm: next to such a hash is still flagged. A data hash nested two levels deep stops the match, so a top-level confirm: written after it is missed. data-confirm attributes do not match"
+      fix: "Move the option under data: `confirm: \"Are you sure?\"` becomes `data: { confirm: \"Are you sure?\" }` (hash rocket form: `:data => { :confirm => \"Are you sure?\" }`). The data: form renders the same data-confirm attribute on 4.0 and 4.1, so the rewrite needs no NextRails.next? branch and can land before the bump. Keep the message argument as written, including an I18n.t(...) call. If the helper already has a data: hash, add confirm: to it rather than passing a second data: key"
+      variable_name: "CONFIRM_OPTION"
+
+    - name: "include AbstractController::Layouts / ViewPaths (moved to ActionView)"
+      kind: breaking
+      pattern: "(?:\\binclude[\\s(]+|\\bsend[\\s(]*:include\\s*,\\s*)(?:(?:::)?[\\w:]+\\s*,\\s*)*(?:::)?AbstractController::(?:Layouts|ViewPaths)\\b"
+      exclude: "^\\s*#"
+      search_paths:
+        - "app/"
+        - "lib/"
+      explanation: "Rails 4.1 extracted Action View into its own actionview gem and moved the layouts module with it: AbstractController::Layouts (actionpack/lib/abstract_controller/layouts.rb on 4.0) became ActionView::Layouts (actionview/lib/action_view/layouts.rb), and no alias was left behind. AbstractController::ViewPaths moved the same way, to ActionView::ViewPaths. A class that includes either old constant (with `include` or `send(:include, ...)`) raises `NameError: uninitialized constant AbstractController::Layouts` when it loads, so eager loading fails at boot in production and the first request or test that touches the class fails in development. The usual users are custom renderers built on AbstractController::Base (PDF, report, or export renderers) that need layouts outside a controller. ActionController::Base and ActionMailer::Base switch modules on their own and are not affected"
+      fix: "ActionView::Layouts does not exist on 4.0, so while both versions boot pick the module at load time: `include(NextRails.next? ? ActionView::Layouts : AbstractController::Layouts)`, and the same for `ActionView::ViewPaths` / `AbstractController::ViewPaths`. Once 4.1 is the current version, include the ActionView modules directly. The layout DSL (`layout \"report\"`, `_layout`, `action_has_layout?`) is the same in both modules"
+      variable_name: "ABSTRACT_CONTROLLER_LAYOUTS"
+
+    - name: "acts_as_list below 0.3 (calls finder APIs removed in 4.1)"
+      kind: breaking
+      pattern: "(?<![\\w-])acts_as_list(?![\\w-])[^\\n]*?[('\",]\\s*(?:=?\\s*0\\.[0-2](?:\\.\\d+)*|~>\\s*0\\.[0-2]\\.\\d+(?:\\.\\d+)*|<=\\s*0\\.[0-2](?:\\.\\d+)*|<\\s*0\\.(?:[0-2](?:\\.\\d+)*|3(?:\\.0)*))\\s*[)'\",]"
+      exclude: "^\\s*#|\\b(?:ref|tag|branch):|:(?:ref|tag|branch)\\s*=>"
+      search_paths:
+        - "Gemfile"
+        - "Gemfile.lock"
+        - "Gemfile.next.lock"
+      explanation: "acts_as_list 0.1.x and 0.2.0 call `find(:first, :conditions => ..., :order => ...)` inside the gem, and 0.1.x also calls the two-argument `update_all(updates, conditions)`. On Rails 4.0 both forms work with a deprecation warning because activerecord-deprecated_finders is a default dependency. Rails 4.1 drops that dependency, so the gem installs and loads fine but fails at runtime: on 0.1.x, adding an item and move_higher / move_lower go through find(:first, ...) and raise `ActiveRecord::RecordNotFound: Couldn't find all <Model>s with 'id': (first, {:conditions=>...})`, and move_to_top, insert_at, remove_from_list and destroy go through the two-argument update_all and raise `ArgumentError: wrong number of arguments`. On 0.2.0 only higher_item and lower_item still call find(:first, ...), so move_higher, move_lower and those two methods raise the same RecordNotFound while adding and removing items work. acts_as_list 0.3.0 and later use where/order/first and the one-argument update_all, and run on 4.1. The pattern flags a resolved `acts_as_list (0.x.y)` line in a lockfile with x of 0, 1, or 2, and a Gemfile or lockfile constraint that caps the gem below 0.3: an exact 0.0 to 0.2 version, `~> 0.1.6` or `~> 0.2.0` (three segments), `<= 0.2.x`, or `< 0.3`. Constraints that still allow 0.3, such as `>= 0.2` or `~> 0.1` (which allows anything below 1.0), are not flagged, since the resolved lockfile line shows what Bundler picked. Commented-out lines and git `ref:` / `tag:` / `branch:` lines are skipped. A bare `gem 'acts_as_list'` carries no version, so the lockfile line is the one that matters. A hit on a dependency line nested under another gem in the lockfile means that gem caps acts_as_list below 0.3; upgrade or replace that parent gem too"
+      fix: "Upgrade the gem with one constraint for both bundles: `gem 'acts_as_list', '~> 0.7.7'` (0.7.x declares activerecord >= 3.0 and runs on 4.0 and 4.1), then `bundle update acts_as_list`. No NextRails.next? branch is needed. Several releases separate 0.1.x from 0.7.x, so read the gem's changelog and run the specs that cover list ordering. As a short-term bridge, keeping `gem 'activerecord-deprecated_finders'` in the 4.1 bundle restores the removed finder forms and the old gem keeps working with deprecation warnings"
+      variable_name: "ACTS_AS_LIST_PRE_0_3"
+
   medium_priority:
-    - name: "MultiJSON usage"
-      pattern: "\\bMultiJSON\\b|require\\s+['\"]multi_json['\"]"
+    - name: "MultiJson usage (multi_json gem)"
+      kind: breaking
+      pattern: "\\bMultiJson\\b|require\\s+['\"]multi_json['\"]"
       exclude: ""
       search_paths:
         - "app/"
         - "lib/"
         - "config/"
-      explanation: "Rails 4.1 no longer depends on MultiJSON. Apps that reference it directly will hit NameError once Rails stops pulling it in transitively. Gemfile is intentionally excluded — `gem 'multi_json'` IS the fix, not a breaking-change signal"
-      fix: "Either keep gem 'multi_json' in the Gemfile, or migrate callers to core JSON: obj.to_json and JSON.parse(str). Do NOT blindly replace with JSON.dump/JSON.load — those are unsafe for arbitrary objects"
+        - "spec/"
+        - "test/"
+      explanation: "Rails 4.1 no longer depends on the multi_json gem. Code that references its MultiJson constant (calls, rescue clauses, adapter setup such as MultiJson.use(:oj) in an initializer) raises NameError once Rails stops pulling the gem in, including request and controller specs that parse response bodies with it. The Gemfile is not searched: `gem 'multi_json'` is the fix, not a breaking-change signal"
+      fix: "Either keep `gem 'multi_json'` in the Gemfile (the only choice that keeps a MultiJson.use / MultiJson.engine adapter setting meaningful), or migrate callers to core JSON. MultiJson.load / MultiJson.decode(str) becomes JSON.parse(str), with symbolize_keys: true renamed to symbolize_names: true (JSON.parse ignores symbolize_keys: and returns string keys). multi_json's json adapter also passed quirks_mode: true, so on json 1.x a bare scalar body ('42', 'null') needs JSON.parse(str, quirks_mode: true). MultiJson.dump / MultiJson.encode(obj) becomes obj.to_json, and dump(obj, pretty: true) becomes JSON.pretty_generate(obj). rescue MultiJson::ParseError / DecodeError / LoadError becomes rescue JSON::ParserError. Do not replace calls with JSON.dump / JSON.load: those are the json gem's object (de)serializers and are unsafe on untrusted input"
       variable_name: "MULTI_JSON"
 
     - name: "ActiveRecord::Relation mutator calls"
+      kind: breaking
       pattern: "\\.(compact!|map!|delete_if|reject!|select!|flatten!|sort!|uniq!|collect!)\\b"
       exclude: ""
       search_paths:
@@ -85,6 +286,7 @@ breaking_changes:
       variable_name: "RELATION_MUTATORS"
 
     - name: "Controller test with format: :js (should use xhr)"
+      kind: breaking
       pattern: "^\\s*(get|post|put|patch|delete)\\s+:[a-z_]+[^\\n]*format:\\s*:js"
       exclude: "\\bxhr\\b"
       search_paths:
@@ -96,6 +298,7 @@ breaking_changes:
       variable_name: "JS_CONTROLLER_TEST"
 
     - name: "flash.to_hash with symbol key filters"
+      kind: breaking
       pattern: "flash\\.to_hash\\.(except|slice|values_at)\\(\\s*:"
       exclude: ""
       search_paths:
@@ -105,6 +308,7 @@ breaking_changes:
       variable_name: "FLASH_SYMBOL_KEYS"
 
     - name: "Cookies serializer not configured"
+      kind: optional
       pattern: "cookies_serializer"
       exclude: ""
       search_paths:
@@ -114,6 +318,7 @@ breaking_changes:
       variable_name: "COOKIES_SERIALIZER"
 
     - name: "I18n enforce_available_locales config"
+      kind: breaking
       pattern: "enforce_available_locales|available_locales"
       exclude: ""
       search_paths:
@@ -123,6 +328,7 @@ breaking_changes:
       variable_name: "I18N_ENFORCE_LOCALES"
 
     - name: "time_precision (as_json millisecond default)"
+      kind: migration
       pattern: "time_precision"
       exclude: ""
       search_paths:
@@ -131,8 +337,48 @@ breaking_changes:
       fix: "If clients require second precision: `ActiveSupport::JSON::Encoding.time_precision = 0` in an initializer. Otherwise accept the new default"
       variable_name: "JSON_TIME_PRECISION"
 
+    - name: "Relation#all on a relation or association (returns a Relation, not an Array)"
+      kind: breaking
+      pattern: "\\.all[ \\t]*$|\\.all[ \\t]*[^(?\\w]"
+      exclude: "\\bPromise\\.all\\b"
+      search_paths:
+        - "app/"
+        - "lib/"
+        - "spec/"
+        - "test/"
+      explanation: "On Rails 4.0 the bundled activerecord-deprecated_finders gem defines Relation#all: calling it on a relation or an association (Post.where(published: true).all, user.posts.all) emits a deprecation warning and returns an Array. Rails 4.1 drops that gem, so the same call falls through to the model's class-level all and returns a Relation. Code that treats the result as an Array breaks: sort!, pop, shift and the other bang mutators raise NoMethodError, and is_a?(Array) turns false. Passing finder options (.all(conditions: ...)) raises ArgumentError on 4.1; this pattern skips `.all(` with the parenthesis right after `all`, but still matches `.all (...)` with a space before it. HIGH FALSE-POSITIVE RATE: most hits are Model.all on a constant, which is the replacement and is fine. JavaScript's Promise.all is excluded. Capybara's page.all(\".row\") is skipped, but page.all \".row\" without parentheses matches, and so does any object that defines its own all method. Check the receiver of every hit before rewriting it"
+      fix: "Replace rel.all with rel.to_a, which returns an Array on 4.0 and 4.1 and does not warn. Prefer to_a over the load the deprecation message also suggests: load returns the Relation, so it changes the return type. Where the caller only iterates (each, map), dropping .all also works, but keep to_a when the result is appended to with <<: on a has_many association of a saved record, << saves the new record. Leave Model.all, page.all(...) and custom all methods alone. As a short-term bridge, gem 'activerecord-deprecated_finders' restores the 4.0 behavior on 4.1"
+      variable_name: "RELATION_ALL"
+
+    - name: "count on a relation with a multi-column select"
+      kind: breaking
+      pattern: "(?<![A-Za-z0-9_])select(?:\\(\\s*|\\s+)(?:[\"'][^\"'\\n]*,[^\"'\\n]*[\"']|[\"'][^\"'\\n]*\\.\\*[^\"'\\n]*[\"']|(?:[\"'][^\"'\\n]*[\"']|:\\w+)\\s*,\\s*(?:[\"']|:\\w)|\\[[^\\]\\n]*,[^\\]\\n]*\\]|%[wi][\\[({<]\\s*\\w+\\s+\\w)"
+      exclude: "\\b(?:f|form|builder)\\.select\\b|(?:<%=?|^\\s*[=-])\\s*select\\b|:from\\s*=>|\\bfrom:|\\bIO\\.select\\b"
+      search_paths:
+        - "app/"
+        - "lib/"
+        - "spec/"
+        - "test/"
+      explanation: "Rails 4.0 ignores a select list that contains a comma or `*` when it builds a count, so Post.select(\"title, version\").count runs COUNT(*). Rails 4.1 passes the select list straight into COUNT, producing COUNT(title, version), which SQLite, PostgreSQL and MySQL all reject with ActiveRecord::StatementInvalid. A table-qualified star breaks the same way: Post.joins(:author).select(\"posts.*\").count runs COUNT(posts.*) on 4.1, which SQLite and MySQL reject (PostgreSQL accepts it). A bare select(\"*\") is fine, it becomes COUNT(*). The pattern flags the shapes a multi-column select takes: a comma inside one string, a string containing `.*`, several string or symbol arguments, an array or a %w[] list, with or without parentheses, called on a receiver or bare inside a scope body. The ActionView select form helper takes several string arguments too, so select calls right after <%=, a HAML/Slim = or on a form builder (f.select) are excluded. A hit only breaks when something calls count with no argument on that relation, so trace the callers, including specs and any method that returns the relation. size on a relation is safe on 4.1 (it calls count(:all) when the relation is not loaded), and so is an explicit count(:all) or count(:column). size on a has_many association that is not loaded is not safe: it calls count with no argument, so a multi-column select in the association scope raises on owner.things.size. empty? and any? are safe (a relation calls count(:all), an association runs exists?). many? on a has_many association that is not loaded goes through size and raises the same way. Capybara's `select 'x', from: 'y'` and IO.select are excluded; the ActionView select helper called from a .rb helper is not, so read those hits"
+      fix: "Call count(:all) on the relation, which runs COUNT(*) on 4.0 and 4.1. size also works on a relation, but not on an unloaded has_many association whose scope has the select: use count(:all) there too. Or stop handing a multi-column select relation to callers that count it"
+      variable_name: "COUNT_MULTI_COLUMN_SELECT"
+
+    - name: "RecordNotFound message text asserted or passed on"
+      kind: breaking
+      pattern: "Couldn\\\\?'t find [\\w:]+ with \\w+=|Couldn\\\\?'t find all [\\w:]+ with IDs"
+      exclude: ""
+      search_paths:
+        - "spec/"
+        - "test/"
+        - "app/"
+        - "lib/"
+      explanation: "Rails 4.1 quotes the primary key in the ActiveRecord::RecordNotFound message: Post.find(999) raises \"Couldn't find Post with 'id'=999\" where 4.0 raised \"Couldn't find Post with id=999\", and the several-ids form changes from \"with IDs (1, 999)\" to \"with 'id': (1, 999)\" (relation/finder_methods.rb, raise_record_not_found_exception!). Specs that assert the message text fail. The apostrophe may be escaped (Couldn\\'t, as in a single-quoted Ruby string) or not. The single-id half takes any primary key name (`with UserID=5`) but needs `=` right after it, so app-written messages with spaces around `=` do not match. An app-written message in exactly the Rails shape does match, and does not change on upgrade. Also check app code that puts e.message into a response body: API clients get the quoted form after the upgrade"
+      fix: "Assert on what the app controls instead of Rails wording: the exception class (raise_error(ActiveRecord::RecordNotFound)), the response status, and the id that was looked up. Where the response carries an app-written message, assert that instead. If a spec must keep checking the Rails text, match both forms, for example /Couldn't find Post with '?id'?=999/, and drop the old form once 4.0 is gone. If API clients parse the message, tell them about the new wording or return an app-owned message"
+      variable_name: "RECORD_NOT_FOUND_MESSAGE"
+
   low_priority:
     - name: "Spring gem in Gemfile (presence check)"
+      kind: optional
       pattern: "gem\\s+['\"]spring['\"]"
       exclude: ""
       search_paths:
@@ -142,6 +388,7 @@ breaking_changes:
       variable_name: "SPRING"
 
     - name: "Legacy secret_key_base / secret_token reads"
+      kind: migration
       pattern: "Rails\\.application\\.config\\.secret_(key_base|token)"
       exclude: ""
       search_paths:
@@ -152,6 +399,7 @@ breaking_changes:
       variable_name: "SECRETS_CONFIG_READS"
 
     - name: "render :text usage"
+      kind: migration
       pattern: "\\brender\\s*[\\(\\s]\\s*(?:.*,\\s*)?(?:text:\\s*|:text\\s*=>)"
       exclude: ""
       search_paths:
@@ -161,6 +409,7 @@ breaking_changes:
       variable_name: "RENDER_TEXT"
 
     - name: "encode_json hook override"
+      kind: breaking
       pattern: "def\\s+encode_json\\b"
       exclude: ""
       search_paths:
@@ -171,6 +420,7 @@ breaking_changes:
       variable_name: "ENCODE_JSON_HOOK"
 
     - name: "encode_big_decimal_as_string (dead setting)"
+      kind: migration
       pattern: "encode_big_decimal_as_string"
       exclude: ""
       search_paths:
@@ -180,6 +430,7 @@ breaking_changes:
       variable_name: "BIG_DECIMAL_AS_STRING"
 
     - name: "JSON.generate / JSON.dump on Rails objects"
+      kind: migration
       pattern: "\\bJSON\\.(generate|dump)\\b"
       exclude: ""
       search_paths:
@@ -190,6 +441,7 @@ breaking_changes:
       variable_name: "JSON_GEM_ISOLATION"
 
     - name: "set_callback around lambda with &block"
+      kind: breaking
       pattern: "set_callback\\s+.+,\\s*:around\\s*,\\s*->\\([^)]*&block"
       exclude: ""
       search_paths:
@@ -200,6 +452,7 @@ breaking_changes:
       variable_name: "SET_CALLBACK_AROUND"
 
     - name: "disable_implicit_join_references config (dead setting)"
+      kind: deprecation
       pattern: "disable_implicit_join_references"
       exclude: ""
       search_paths:
@@ -209,6 +462,7 @@ breaking_changes:
       variable_name: "DISABLE_IMPLICIT_JOIN_REFERENCES"
 
     - name: "ActiveRecord::Migration.check_pending! in test helper"
+      kind: optional
       pattern: "ActiveRecord::Migration\\.check_pending!"
       exclude: ""
       search_paths:
@@ -222,13 +476,13 @@ dependencies:
   multi_json:
     check: false
     gem_name: "multi_json"
-    message: "Add to Gemfile only if the app still calls MultiJSON.dump / MultiJSON.load directly — Rails 4.1 no longer pulls it in"
+    message: "Add to Gemfile only if the app still calls MultiJson.dump / MultiJson.load directly. Rails 4.1 no longer pulls it in"
     url: "https://github.com/intridea/multi_json"
 
   activerecord-deprecated_finders:
     check: false
     gem_name: "activerecord-deprecated_finders"
-    message: "Short-term bridge: restores find_all_by_*, find_last_by_*, scoped_by_*, and dynamic find_or_*_by_* finders removed from Rails 4.1"
+    message: "Short-term bridge: restores find_all_by_*, find_last_by_*, scoped_by_*, dynamic find_or_*_by_* finders, finder options and update_all with conditions, removed from Rails 4.1. Also restores the old association finder options (:conditions, :order, :uniq, :readonly and the rest of that set) on has_many / has_one / belongs_to, with a deprecation warning. It does not restore them on has_and_belongs_to_many, which drops them silently at 4.1, and on Ruby 2.3+ it drops a Hash-valued :conditions. It also restores the find(:first, :conditions => ...) and two-argument update_all forms that old gem versions such as acts_as_list below 0.3.0 still call. It also restores the Array-returning Relation#all. Declare it with require: 'active_record/deprecated_finders'; a bare gem line is never loaded on 4.1"
     url: "https://github.com/rails/activerecord-deprecated_finders"
 
   spring:

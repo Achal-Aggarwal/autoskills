@@ -1,0 +1,511 @@
+# Fixture expectations for rails-41-patterns.yml.
+#
+# Keyed by variable_name (matching the entries in rails-41-patterns.yml). For
+# each pattern you cover, list:
+#   match     - lines the pattern MUST flag (the real breaking-change shapes)
+#   no_match  - lines it MUST NOT flag (safe code + known false-positive traps)
+#
+# A line is "flagged" when the entry's `pattern` regex matches it AND the
+# entry's `exclude` regex (when present) does not — a per-line grep + grep -v.
+#
+# Run with:
+#   bin/test-patterns rails-upgrade/detection-scripts/patterns/rails-41-patterns.yml
+
+DYNAMIC_FINDERS:
+  match:
+    # implicit receiver inside the model
+    - "    find_all_by_email(email)"
+    - "User.find_all_by_email(email)"
+    - "User.find_last_by_email(email)"
+    - "User.scoped_by_status(\"active\")"
+    - "  owner.items.find_all_by_color_and_size(color, size)"
+  no_match:
+    - "  def self.find_all_by_status(status)"
+    - "User.find_by_email(email)"
+    - "User.find_by_email!(email)"
+    - "User.find_by(email: email)"
+    - "User.find_by_sql(sql)"
+    - "User.where(email: email).last"
+
+CACHE_DIGESTS_BACKPORT:
+  match:
+    - "gem 'cache_digests'"
+    - "  gem \"cache_digests\", \"~> 0.3.1\""
+    - "    CacheDigests::TemplateDigestor.digest(name, :html, lookup_context)"
+    - "  CacheDigests.cache = ActiveSupport::Cache::MemoryStore.new"
+  no_match:
+    - "gem 'cache_digest'"
+    - "# gem 'cache_digests'"
+    - "gem 'cache_digests' unless NextRails.next?"
+    - "  ActionView::Digestor.digest(name: name, finder: lookup_context)"
+    - "  config.action_view.cache_template_loading = true"
+    - "  <% cache [@post, 'v3'] do %>"
+
+MULTI_JSON:
+  match:
+    # adapter setup and the decode alias also need the gem
+    - "  MultiJson.use(:oj)"
+    - "    data = MultiJson.decode(body)"
+    - "    MultiJson.dump(payload)"
+    - "  data = MultiJson.load(response.body, symbolize_keys: true)"
+    - "require 'multi_json'"
+    - "rescue MultiJson::ParseError => e"
+  no_match:
+    - "  payload.to_json"
+    - "  JSON.parse(response.body)"
+    - "  ActiveSupport::JSON.decode(str)"
+
+# The pattern also spans up to four lines (a helper call whose confirm: sits
+# on a continuation line after a trailing comma, never past %>). Fixtures are
+# per line, so that multi-line shape is covered by the scanner, not by these
+# fixtures. A bare `confirm:` line on its own is a no_match for that reason.
+CONFIRM_OPTION:
+  match:
+    # button_tag and f.button converted confirm: on 4.0 too
+    - "<%= button_tag \"Delete all\", confirm: \"Sure?\" %>"
+    - "<%= f.button \"Go\", confirm: \"Sure?\" %>"
+    # string keys were stringified and converted the same way
+    - "<%= link_to \"Delete\", path, \"confirm\" => \"Sure?\" %>"
+    - "<%= link_to \"Delete\", post_path(@post), method: :delete, confirm: \"Are you sure?\" %>"
+    - "= link_to 'Remove', item_path(item), :confirm => 'Really remove?', :method => :delete"
+    - "<%= button_to \"Destroy\", @post, method: :delete, confirm: t(\"posts.confirm_destroy\") %>"
+    - "<%= submit_tag \"Save\", confirm: \"Save changes?\" %>"
+    - "<%= f.submit \"Publish\", :confirm => \"Publish now?\" %>"
+    - "<%= image_submit_tag \"go.png\", confirm: \"Continue?\" %>"
+    - "<%= link_to \"Archive\", archive_path(@post), data: { method: :post }, confirm: \"Archive it?\" %>"
+    - "= link_to \"Archive\", archive_path(@post), :data => { :confirm => \"Old\" }, :confirm => \"Archive it?\""
+    - "<%= link_to \"Archive\", archive_path(@post), data: { a: { b: 1 } }, confirm: \"Archive it?\" %>"
+    - "<%= link_to \"Archive\", archive_path(@post), 'data' => { method: :post }, confirm: \"Archive it?\" %>"
+  no_match:
+    # button_to's form: hash takes its own attributes
+    - "<%= button_to \"Archive\", archive_path, form: { confirm: \"z\" } %>"
+    - "<%= link_to \"Delete\", post_path(@post), method: :delete, data: { confirm: \"Are you sure?\" } %>"
+    - "= link_to 'Remove', item_path(item), :data => { :confirm => 'Really remove?' }, :method => :delete"
+    - "<%= button_to \"Destroy\", @post, \"data-confirm\" => \"Sure?\" %>"
+    - "<%= link_to \"Confirm email\", confirm_email_path(token: @token) %>"
+    - "<%= f.submit \"Save\", data: { disable_with: \"Saving...\", confirm: \"Save?\" } %>"
+    - "<%= link_to \"Delete\", item, data: { title: \"#{item.name}\", confirm: \"Sure?\" } %>"
+    - "<%= link_to \"Delete\", item, 'data' => { confirm: \"Sure?\" } %>"
+    - "<%= link_to \"Delete\", item, :\"data\" => { :confirm => \"Sure?\" } %>"
+    - "<%= link_to \"Delete\", item, data: { params: { id: 1 }, confirm: \"Sure?\" } %>"
+    - "      confirm: \"Are you sure?\","
+    - "<%= f.password_field :password_confirmation %>"
+    - "<%= link_to \"Home\", root_path %> <%= render \"form\", options: { confirm: true } %>"
+
+ABSTRACT_CONTROLLER_LAYOUTS:
+  match:
+    # ViewPaths moved with Layouts, and send(:include, ...) is common in hooks
+    - "  include AbstractController::ViewPaths"
+    - "  base.send(:include, AbstractController::Layouts)"
+    - "  include AbstractController::Layouts"
+    - "  include ::AbstractController::Layouts"
+    - "    include AbstractController::Layouts # needed for layout \"pdf\""
+    - "  include AbstractController::Rendering, AbstractController::Layouts"
+    - "  include(AbstractController::Layouts)"
+  no_match:
+    - "  # include AbstractController::Layouts"
+    - "  include ActionView::Layouts"
+    - "  include(NextRails.next? ? ActionView::Layouts : AbstractController::Layouts)"
+    - "  include AbstractController::Rendering"
+    - "  include AbstractController::LayoutsHelper"
+
+ACTS_AS_LIST_PRE_0_3:
+  match:
+    - "    acts_as_list (0.1.6)"
+    - "    acts_as_list (0.2.0)"
+    - "gem 'acts_as_list', '0.1.6'"
+    - "gem \"acts_as_list\", \"~> 0.2.0\""
+    - "gem 'acts_as_list', '~> 0.1.6'"
+    - "gem 'acts_as_list', '< 0.3'"
+    - "gem 'acts_as_list', '>= 0.1', '< 0.3'"
+    - "      acts_as_list (~> 0.2.0)"
+  no_match:
+    # a commented-out pin, and a git ref that is not a release constraint
+    - "# gem 'acts_as_list', '0.1.6'"
+    - "gem 'acts_as_list', github: 'example/acts_as_list', ref: '0.1.4'"
+    - "    acts_as_list (0.3.0)"
+    - "    acts_as_list (0.7.7)"
+    - "    acts_as_list (0.9.19)"
+    - "    acts_as_list (1.0.4)"
+    - "gem 'acts_as_list'"
+    - "gem 'acts_as_list', '~> 0.7.7'"
+    - "    active_admin-acts_as_list (0.0.8)"
+    - "    acts_as_list_mongoid (0.2.5)"
+    - "gem 'acts_as_list', '~> 0.1'"
+    - "gem 'acts_as_list', '>= 0.2'"
+    - "gem 'acts_as_list', '< 0.3.1'"
+    - "      acts_as_list (>= 0.1)"
+
+RELATION_ALL:
+  # The pattern cannot tell a constant receiver from a relation, so
+  # `Post.all` also matches. That hit is the replacement, not the problem;
+  # triage each hit by its receiver.
+  match:
+    - "    Post.where(published: true).all.each do |post|"
+    - "  @comments = @post.comments.all"
+    - "    users = User.active.all"
+    - "    records = scope.order(:created_at).all.sort_by!(&:id)"
+    - "    Post.all"
+    # Capybara without parentheses: only .all( right after the name is skipped.
+    - "    rows = page.all \".row\""
+  no_match:
+    - "    Promise.all [a, b]"
+    # Finder options: a separate change, and not the zero-argument call.
+    - "    Post.where(published: true).all(limit: 5)"
+    # Capybara's page.all takes a selector argument.
+    - "    expect(page.all('.row').size).to eq 3"
+    - "    return unless items.all? { |item| item.valid? }"
+    - "    Post.all_published"
+    - "    Post.where(published: true).to_a"
+
+COUNT_MULTI_COLUMN_SELECT:
+  # A hit is only a problem when the relation is later counted with no
+  # argument. That caller is often on another line or in another file, so
+  # the pattern flags the select and the triage traces the count.
+  match:
+    # symbols with digits or capitals, and a %i{} list
+    - "    Post.select(:address_line1, :city).count"
+    - "    Post.select(:ID, :Name).count"
+    - "    Post.select(%i{id title}).count"
+    - "    Post.select(\"title, version\").count"
+    - "  scope :summary, -> { select('posts.id, posts.title') }"
+    - "    Post.select(\"title\", \"version\")"
+    - "    Post.select([:title, :version])"
+    - "    Post.select(:title, :version)"
+    # A table-qualified star: 4.1 runs COUNT(posts.*).
+    - "    Post.joins(:author).select(\"posts.*\").count"
+    - "  scope :with_author, -> { joins(:author).select(\"#{table_name}.*\") }"
+    - "    Post.select(:id, \"title\")"
+    - "    Post.select(%w[id title])"
+    - "  scope :summary, -> { select \"id, title\" }"
+  no_match:
+    # Capybara's select with a from: field, and IO.select
+    - "    select 'Canada', :from => 'Country'"
+    - "    IO.select([reader, writer], nil, nil, 5)"
+    - "    Post.select(:title).count"
+    # A bare star becomes COUNT(*), which works on 4.1.
+    - "    Post.select(\"*\").count"
+    - "    Post.select(\"DISTINCT title\")"
+    - "    Post.select(\"COUNT(*) AS total\")"
+    - "    Post.select(\"title\").where(\"a, b\")"
+    - "    items.select { |item| item.valid? }"
+    # The lookbehind keeps the bare in-scope form while skipping longer names.
+    - "    multiselect(\"title, version\")"
+    # The ActionView select form helper, not a relation.
+    - "<%= select(\"post\", \"person_id\", Person.all.collect { |p| [p.name, p.id] }) %>"
+    - "  = f.select :category, :name"
+    - "    IO.select([sock], nil, nil, 5)"
+
+JOIN_DEPENDENCY_INTERNALS:
+  match:
+    - "    where(\"#{join.aliased_table_name}.account_id = #{join.parent_table_name}.account_id\")"
+    - "  ActiveRecord::Associations::JoinDependency::JoinAssociation.send(:prepend, SoftDeleteJoin)"
+    - "      def join_to(manager)"
+    # An alias_method_chain patch: def join_to_with_soft_delete has no word
+    # boundary after join_to, so the :join_to symbol is what catches it.
+    - "        alias_method_chain :join_to, :soft_delete"
+    - "        alias_method :join_to_without_soft_delete, :join_to"
+    # Reopening the class inside class JoinDependency never spells the full name.
+    - "      class JoinAssociation < JoinPart"
+    - "    where(\"#{join.parent_table.name}.active = 1\")"
+    - "    prefix = join.aliased_prefix"
+    - "    tracker = join.join_dependency.alias_tracker"
+  no_match:
+    # a :join_to symbol outside alias_method is not the Active Record method
+    - "    send(:join_to, relation)"
+    # Commented-out code is excluded.
+    - "  # def join_to(manager) moved to join_constraints in 4.1"
+    # The 4.1 method name and the alias that survived are fine.
+    - "      def join_constraints(foreign_table, foreign_klass, node, join_type, tables, scope_chain, chain)"
+    - "    where(\"#{join.aliased_table_name}.deleted_at IS NULL\")"
+    - "  def join_token"
+    - "    self.parent_table_names = []"
+    # Too common outside JoinAssociation to flag.
+    - "    where(\"#{join.parent.aliased_table_name}.id IS NOT NULL\")"
+    - "    self.join_type = :inner"
+    - "  class JoinAssociationsController < ApplicationController"
+    - "    record.join_token"
+
+RECORD_NOT_FOUND_MESSAGE:
+  match:
+    # a primary key with capitals
+    - "    expect(e.message).to eq \"Couldn't find User with UserID=5\""
+    - "      expect(json[\"error\"]).to eq \"Couldn't find Post with id=999\""
+    - "    assert_equal \"Couldn't find Admin::User with id=5\", error.message"
+    - "      expect(response.body).to include(\"Couldn't find all Posts with IDs (1, 2)\")"
+    # Single-quoted Ruby strings escape the apostrophe.
+    - "      expect(e.message).to eq 'Couldn\\'t find Post with id=1'"
+    - "      expect(body).to include('Couldn\\'t find all Posts with IDs (1, 2)')"
+  no_match:
+    # The 4.1 wording.
+    - "      expect(json[\"error\"]).to eq \"Couldn't find Post with 'id'=999\""
+    - "      expect(e.message).to eq 'Couldn\\'t find Post with \\'id\\'=1'"
+    - "      expect(response.body).to include(\"Couldn't find all Posts with 'id': (1, 2)\")"
+    # App-written message with spaces around the equals sign: not Rails text.
+    - "    raise ActiveRecord::RecordNotFound, \"Couldn't find Invoice with external_ref = #{id}\""
+    - "    expect { Post.find(999) }.to raise_error(ActiveRecord::RecordNotFound)"
+
+DEPRECATED_FINDERS_AUTOREQUIRE:
+  match:
+    - "gem 'activerecord-deprecated_finders'"
+    - "gem \"activerecord-deprecated_finders\", \"~> 1.0.4\""
+    - "  gem 'activerecord-deprecated_finders', require: false"
+    - "  gem 'activerecord-deprecated_finders', :require => false"
+    - "gem 'activerecord-deprecated_finders', require: 'activerecord-deprecated_finders'"
+    - "gem 'activerecord-deprecated_finders', \"1.0.4\" # require: 'active_record/deprecated_finders' later"
+  no_match:
+    # a # inside a git option is not a comment
+    - "gem 'activerecord-deprecated_finders', github: 'example/fork#branch', require: 'active_record/deprecated_finders'"
+    # (require: on a continuation line is also skipped; proved with pattern_lab.rb scan)
+    - "gem 'activerecord-deprecated_finders', require: 'active_record/deprecated_finders'"
+    - "gem \"activerecord-deprecated_finders\", \"~> 1.0.4\", require: \"active_record/deprecated_finders\""
+    - "gem 'activerecord-deprecated_finders', :require => 'active_record/deprecated_finders'"
+    - "# gem 'activerecord-deprecated_finders'"
+    - "gem 'activerecord'"
+
+UPDATE_ALL_WITH_CONDITIONS:
+  # The multi-line shape (`update_all({\n a: 1\n}, {\n id: ids\n})`) matches only
+  # in the whole-file scanner (detection-scripts/scan_patterns.rb); a line-based
+  # search sees single-line calls only. Fixtures are single lines.
+  match:
+    # paren-less calls, as in the 4.0 hop's UPDATE_ALL_TWO_ARG
+    - "    Item.update_all \"price = 0\", \"color = 'red'\""
+    - "Item.update_all({ price: 0 }, { color: \"red\" })"
+    - "Item.update_all(\"price = 0\", [\"color = ?\", color])"
+    - "Item.update_all('price = 0', 'color = \"red\"')"
+    - "Item.update_all([\"price = ?\", price], id: ids)"
+    - "Item.update_all(updates, id: ids)"
+    - "  scope.update_all(attributes, key_column => key)"
+    - "Item.update_all(self.class.reset_values, { id: ids }, limit: 10)"
+    - "Item.update_all({ price: 0 }, nil, order: :id, limit: 5)"
+  no_match:
+    - "  def update_all(updates, conditions = nil)"
+    - "  # Item.update_all(updates, conditions)"
+    - "    Item.update_all(price:0, color: \"blue\")"
+    - "Item.where(color: \"red\").update_all(price: 0)"
+    - "Item.update_all(price: 0, color: \"blue\")"
+    - "Item.update_all(:price => 0, :color => \"blue\")"
+    - "Item.update_all(\"price = 0, color = 'blue'\")"
+    - "Item.update_all([\"price = ?, color = ?\", 0, \"blue\"])"
+    - "Item.update_all(tags: [\"a\", \"b\"].to_yaml)"
+    - "Item.update_all(updates.join(\",\"))"
+    - "Item.update_all(price:0, color: \"blue\")"
+    - "Item.where(id: ids).update_all(updates)"
+
+CALCULATE_FINDER_OPTIONS:
+  # A call split across lines (`count(:id,\n  conditions: c)`) matches only in
+  # the whole-file scanner (detection-scripts/scan_patterns.rb); a line-based
+  # search sees single-line calls only. Fixtures are single lines.
+  match:
+    - "    Item.sum(:price, extend: PriceExtension)"
+    - "Item.count(conditions: { color: \"red\" })"
+    - "Item.count(:id, :conditions => [\"color = ?\", color])"
+    - "Item.maximum(:price, group: :color)"
+    - "owner.items.sum(:price, joins: :orders, conditions: { paid: true })"
+    - "Item.minimum(\"items.price\", joins: \"LEFT JOIN orders ON orders.item_id = items.id\")"
+    - "Item.count(select: \"DISTINCT items.owner_id\")"
+    - "Item.average(:price, :include => :owner)"
+    - "Item.calculate(:sum, :price, having: \"SUM(price) > 10\")"
+    - "Item.count(:all, group: :color)"
+    - "Item.sum(\"price\", :limit => 5)"
+  no_match:
+    # a finder key inside a nested call's arguments
+    - "    stats.count(build_scope(select: :id))"
+    - "Item.where(color: \"red\").count"
+    - "Item.group(:color).maximum(:price)"
+    - "Item.count(:owner_id, distinct: true)"
+    - "Item.count(\"DISTINCT items.owner_id\")"
+    - "Item.sum(:order_total)"
+    - "Item.count(:group_id)"
+    - "Item.maximum(:price, sub_group: :color)"
+    - "[1, 2, 3].sum"
+    # Service objects that take keyword arguments with the same names.
+    - "TaxCalculator.calculate(order: order)"
+    - "Shipping.calculate(from: origin, to: dest)"
+    - "Stats.count(limit: 10)"
+
+DISTINCT_COUNT_OPTION:
+  # A call split across lines (`count(:owner_id,\n  distinct: true)`) matches
+  # only in the whole-file scanner (detection-scripts/scan_patterns.rb); a
+  # line-based search sees single-line calls only. Fixtures are single lines.
+  match:
+    - "Item.count(:owner_id, distinct: true)"
+    - "Item.count(:owner_id, :distinct => true)"
+    - "  unique_owners: scope.count(:owner_id, distinct: true),"
+    - "Item.calculate(:count, :owner_id, distinct: true)"
+    - "Item.count(:owner_id, conditions: { color: \"red\" }, distinct: true)"
+  no_match:
+    - "Item.distinct.count(:owner_id)"
+    - "Item.uniq.count(:owner_id)"
+    - "Item.count(\"DISTINCT items.owner_id\")"
+    - "Item.count(select: \"distinct items.owner_id\")"
+    - "Item.count(:owner_id, distinct: false)"
+    - "Item.count(:owner_id, not_distinct: true)"
+    - "Item.where(distinct: true).count"
+
+ASSOCIATION_CONDITIONS:
+  match:
+    - "  has_many :active_items, class_name: \"Item\", conditions: { active: true }"
+    - "  has_one :primary_address, :class_name => \"Address\", :conditions => \"primary = 1\""
+    - "  belongs_to :author, class_name: \"User\", conditions: [\"deleted_at IS NULL\"]"
+    - "  has_and_belongs_to_many :tags, conditions: { visible: true }"
+    - "  has_many :items, conditions: proc { [\"account_id = ?\", account_id] }"
+  no_match:
+    - "  has_many :active_items, -> { where(active: true) }, class_name: \"Item\""
+    - "  has_many :items, ->(owner) { where(account_id: owner.account_id) }"
+    - "  has_many :items, before_add: :check_conditions"
+    # not an association: the validator's own :conditions option is still valid at 4.1
+    - "  validates_uniqueness_of :email, conditions: -> { where(deleted_at: nil) }"
+
+ASSOCIATION_ORDER:
+  match:
+    - "  has_many :items, :order => 'position ASC'"
+    - "  has_one :latest_comment, class_name: \"Comment\", order: \"created_at DESC\""
+    - "  has_and_belongs_to_many :tags, order: :name"
+  no_match:
+    - "  has_many :items, -> { order('position ASC') }"
+    - "  has_one :latest_comment, -> { order(created_at: :desc) }, class_name: \"Comment\""
+    # underscore before "order" (sort_order) must not trip the [^_] guard
+    - "  has_many :items, sort_order: 'asc'"
+    # an association named order is not the option
+    - "  belongs_to :order, touch: true"
+    - "  has_many :orders, dependent: :destroy"
+
+ASSOCIATION_UNIQ:
+  match:
+    - "  has_many :tags, through: :taggings, uniq: true"
+    - "  has_and_belongs_to_many :roles, :uniq => true"
+    - "  has_one :primary_tag, through: :primary_tagging, uniq: true"
+  no_match:
+    - "  has_many :tags, -> { distinct }, through: :taggings"
+    - "  has_many :tags, -> { uniq }, through: :taggings"
+    - "  has_many :unique_visits, dependent: :destroy"
+
+ASSOCIATION_READONLY:
+  match:
+    - "  has_many :tags, through: :taggings, readonly: false"
+    - "  has_many :line_items, :through => :orders, :readonly => true"
+    - "  has_and_belongs_to_many :roles, readonly: true"
+    - "  belongs_to :account, readonly: true"
+    - "  has_one :profile, :readonly => true"
+  no_match:
+    - "  has_many :tags, -> { readonly }, through: :taggings"
+    - "  has_many :tags, -> { readonly(false) }, through: :taggings"
+    - "  has_many :tags, through: :taggings"
+
+# The scanner matches file content, so a body on the next line
+# (`scope :active,` then `where(...)` below it) is caught there; a fixture
+# line can only show the single-line shapes.
+SCOPE_WITHOUT_LAMBDA:
+  match:
+    - "  scope :active, where(active: true)"
+    - "  scope :recent, order('created_at DESC')"
+    - "  scope :with_author, joins(:author).where(authors: { active: true })"
+    - "  scope :sorted, scoped.order(:name)"
+    - "  scope :published, :conditions => { published: true }"
+    - "  scope :visible, conditions: { hidden: false }"
+    - "  scope(:active, where(active: true))"
+    - "  scope( :recent, order('created_at DESC'))"
+    - "  scope :active, Post.where(active: true)"
+    # a String does not respond to call: 4.0 returned it, 4.1 raises
+    - "  scope :active, 'active = 1'"
+    - "  scope :active, \"active = 1\""
+  no_match:
+    - "  scope :active, -> { where(active: true) }"
+    - "  scope :active,->{ where(active: true) }"
+    - "  scope :by_flag, ->(flag) { where(active: flag) }"
+    - "  scope :active, lambda { where(active: true) }"
+    - "  scope :active, proc { where(active: true) }"
+    - "  scope :active, Proc.new { where(active: true) }"
+    - "  scope :search, (proc { |q| where('name LIKE ?', q) })"
+    - "  scope(:active, -> { where(active: true) })"
+    - "  scope :active, method(:active_scope)"
+    - "  scope :active, ACTIVE"
+    - "  scope :active, Scopes::ACTIVE # shared lambda"
+    - "  scope(:active, ACTIVE)"
+    - "  # scope :archived, where(archived: true)"
+    - "  default_scope { where(deleted_at: nil) }"
+    - "  def self.active; where(active: true); end"
+
+# The scanner matches file content, so `default_scope(` with the lambda on
+# the next line is still skipped there; a fixture line can only show the
+# single-line shapes.
+DEFAULT_SCOPE_WITHOUT_BLOCK:
+  match:
+    - "  default_scope where(deleted_at: nil)"
+    - "  default_scope order('created_at DESC')"
+    - "  default_scope(where(active: true))"
+    - "  default_scope :order => 'name'"
+    - "  default_scope order: 'name'"
+    - "  default_scope includes(:author)"
+    # no argument and no block: 4.1 raises on nil too
+    - "  default_scope # set in the concern"
+    - "  default_scope"
+  no_match:
+    # a constant or Method object that responds to call
+    - "  default_scope ACTIVE_SCOPE"
+    - "  default_scope method(:active_scope)"
+    - "  default_scope { where(deleted_at: nil) }"
+    - "  default_scope do"
+    - "  default_scope -> { order(:name) }"
+    - "  default_scope(-> { order(:name) })"
+    - "  default_scope lambda { order(:name) }"
+    - "  default_scope proc { order(:name) }"
+    - "  default_scope Proc.new { order(:name) }"
+    - "  def self.default_scope"
+    - "  # default_scope where(deleted_at: nil)"
+    - "  # Joining :user applies the default_scope, so filter in SQL"
+    - "  self.default_scopes = []"
+    - "  Model.unscoped { build_default_scope }"
+
+SCOPE_NAME_COLLISION:
+  match:
+    - "  scope :none, -> { where('1 = 0') }"
+    - "  scope :all, -> { where(archived: false) }"
+    - "  scope :first, -> { order(:id).limit(1) }"
+    - "  scope :count, -> { select('COUNT(*)') }"
+    - "  scope :new, -> { where(state: 'new') }"
+    - "  scope :distinct, -> { select('DISTINCT name') }"
+    - "    scope :where, lambda { |*args| super(*args) }"
+    - "  scope :public, -> { where(public: true) }"
+    - "  scope :private, -> { where(public: false) }"
+    - "  scope :name, -> { order(:name) }"
+    - "  scope :parent, -> { where(parent_id: nil) }"
+    - "  scope(:none, -> { where('1 = 0') })"
+    # any other Querying method on Base is rejected too
+    - "  scope :uniq, -> { select('DISTINCT name') }"
+    - "  scope :readonly, -> { where(locked: true) }"
+    - "  scope :lock, -> { where(locked: true) }"
+    - "  scope :from, ->(t) { where('created_at >= ?', t) }"
+    - "  scope :exists?, -> { where.not(id: nil) }"
+  no_match:
+    - "  scope :none_assigned, -> { where(assignee_id: nil) }"
+    - "  scope :allowed, -> { where(allowed: true) }"
+    - "  scope :newest, -> { order(created_at: :desc) }"
+    - "  scope :active, -> { where(active: true) }"
+    - "  scope :recent_first, -> { order(created_at: :desc) }"
+    - "  scope :published, -> { where(published: true) }"
+    - "  scope :named, ->(q) { where(name: q) }"
+    - "  scope :public_posts, -> { where(public: true) }"
+    - "  scope :parents, -> { where(parent_id: nil) }"
+    - "  scope :name?, -> { where.not(name: nil) }"
+    - "  scope :limit!, -> { limit(1) }"
+    - "  scope :locked, -> { where(locked: true) }"
+    - "  scope :uniqueness, -> { x }"
+    - "  Post.none"
+    - "  # scope :none, -> { where('1 = 0') }"
+    - "  def self.none; where('1 = 0'); end"
+
+FINDER_SQL:
+  match:
+    - "  has_many :comments, :finder_sql => 'SELECT * FROM comments WHERE approved = 1'"
+    - "  has_many :comments, finder_sql: proc { \"SELECT * FROM comments WHERE post_id = #{id}\" }"
+    - "  has_many :tags, counter_sql: 'SELECT COUNT(*) FROM tags'"
+    - "  has_and_belongs_to_many :groups, :finder_sql => 'SELECT * FROM groups'"
+    - "    :counter_sql => 'SELECT COUNT(*) FROM comments WHERE approved = 1',"
+  no_match:
+    - "  has_many :comments, -> { where(approved: true) }"
+    - "  # has_many :comments, :finder_sql => 'SELECT * FROM comments'"
+    - "  Comment.find_by_sql('SELECT * FROM comments')"
+    - "  Comment.count_by_sql('SELECT COUNT(*) FROM comments')"
+    - "  options[:finder_sql]"

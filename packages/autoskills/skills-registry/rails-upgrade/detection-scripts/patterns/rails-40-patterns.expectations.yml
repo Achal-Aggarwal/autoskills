@@ -1,0 +1,1031 @@
+# Fixture expectations for rails-40-patterns.yml.
+#
+# Keyed by variable_name (matching the entries in rails-40-patterns.yml). For
+# each pattern you cover, list:
+#   match     - lines the pattern MUST flag (the real breaking-change shapes)
+#   no_match  - lines it MUST NOT flag (safe code + known false-positive traps)
+#
+# A line is "flagged" when the entry's `pattern` regex matches it AND the
+# entry's `exclude` regex (when present) does not — a per-line grep + grep -v.
+# File- or project-level exclusion (an `exclude` that depends on another line
+# elsewhere in the file) is not modeled; write those as a match line plus a
+# separate no_match line.
+#
+# The match list doubles as the living scope doc: when you find an uncovered
+# shape, add it to `match` first, watch the test go red, then widen the regex
+# in the pattern file until it passes.
+#
+# Run with:
+#   bin/test-patterns rails-upgrade/detection-scripts/patterns/rails-40-patterns.yml
+#
+# VENDOR_PLUGINS is intentionally uncovered: its pattern is "" (path-only
+# detection via search_paths), so flagged? always returns false and no
+# match line could ever pass.
+
+ATTR_ACCESSIBLE:
+  match:
+    - "  attr_accessible :name, :email"
+  no_match:
+    - "  attr_accessor :name, :email"
+
+ATTR_PROTECTED:
+  match:
+    - "  attr_protected :admin"
+  no_match:
+    - "  attr_accessor :admin"
+
+REQUIRE_STRONG_PARAMS:
+  match:
+    - "require 'strong_parameters'"
+  no_match:
+    - "require 'strong_password'"
+
+SCOPE_WITHOUT_LAMBDA:
+  # A scope body that is not callable: Rails 4.0 warns when the model loads.
+  # The line must start with `scope` (so comments do not flag), and anything
+  # after the comma other than a lambda or proc flags, including a body that
+  # starts on the next line.
+  match:
+    # bare where() right after the scope name
+    - "  scope :active, where(active: true)"
+    # extra whitespace around the name and comma must still flag
+    - "  scope :recent , where('created_at > ?', 1.week.ago)"
+    # parenthesized call form
+    - "  scope(:active, where(active: true))"
+    # any relation method, not only where
+    - "  scope :ordered, order(:position)"
+    - "  scope :visible, scoped.where(hidden: false)"
+    - "  scope :popular, with_votes.select('items.*, COUNT(votes.id) AS vote_count')"
+    # a relation wrapped in parentheses is still not callable
+    - "  scope :sorted, (joins(:category).order(:position))"
+    # body on the next line: the scope line itself is flagged
+    - "  scope :with_votes,"
+    # string scope name
+    - "  scope 'active', where(active: true)"
+  no_match:
+    # already wrapped in a stabby lambda, the Rails 4 form
+    - "  scope :active, -> { where(active: true) }"
+    - "  scope :by_month, ->(month) { where(month: month) }"
+    # wrapped in an explicit lambda or proc
+    - "  scope :active, lambda { where(active: true) }"
+    - "  scope :by_month, proc { |month| where(month: month) }"
+    - "  scope :by_month, Proc.new { |month| where(month: month) }"
+    # a proc wrapped in parentheses is callable, no warning on 4.0
+    - "  scope :by_month, (proc { |month| where(month: month) })"
+    - "  scope(:active, -> { where(active: true) })"
+    # commented-out scope
+    - "  # scope :active, where(active: true)"
+    # a constant or a Method object that responds to call
+    - "  scope :active, ACTIVE_SCOPE"
+    - "  scope(:active, Filters::ACTIVE)"
+    - "  scope :search, Search.method(:call)"
+
+CLASS_SCOPED:
+  # Model.scoped, relation.scoped and a receiverless `scoped` inside a model
+  # warn on 4.0 (activerecord-deprecated_finders) and raise on 4.1.
+  match:
+    - "  items = Model.scoped"
+    - "  Model.scoped(conditions: { active: true }, include: :owner)"
+    - "  Model.scoped.reorder(:id)"
+    - "    user.posts.scoped.where(published: true)"
+    - "  post_ids = Post.where(id: ids).scoped.pluck(:id)"
+    - "  scope :foo, -> { scoped.joins(:bar) }"
+    - "  scope :everyone, -> { scoped }"
+    - "  scope :active, scoped.where(active: true)"
+    - "    kind.blank? ? scoped : where(kind: kind)"
+    - "    return scoped unless region.present?"
+    - "      scoped"
+    - "    else      scoped"
+    - "  subject { described_class.scoped }"
+    # receiverless scoped passed as an argument
+    - "    where(active: true).merge(scoped)"
+    - "    (scoped)"
+    - "    wrap(scoped, options)"
+  no_match:
+    - "  Model.unscoped.where(active: true)"
+    - "  Model.default_scoped"
+    - "  user.scoped_ids"
+    - "  Model.scoped_by_name(\"x\")"
+    - "  def user_scoped"
+    - "  def scoped"
+    - "  def self.scoped(options = nil)"
+    # prose in comments and strings
+    - "  # Event.scoped(include: :venue)"
+    - "  # these associations only work when scoped to one type"
+    - "  desc \"Export rows, scoped to one account\""
+    - "  it_behaves_like \"a unique name, scoped by account_id\""
+    - "  context \"scoped to account_id\" do"
+    - "  describe \"#scoped\" do"
+    - "  -# sidebar styles (scoped to this layout)"
+    - "    // keep this handler scoped to one element"
+    - "    \"@babel/plugin-transform-block-scoped-functions\": \"^7.14.5\","
+    - "    \"make sure the query is properly scoped.\""
+    # a local variable or let named scoped
+    - "    scoped = if ids.any?"
+    - "    scoped ||= where(nil)"
+    - "    scoped&.map(&:name)"
+    - "    allow(report).to receive(:rows).and_return(scoped)"
+    - "  let(:scoped) { Widget.where(nil) }"
+
+DEFAULT_SCOPE_WITHOUT_BLOCK:
+  match:
+    - "  default_scope where(active: true)"
+    - "  default_scope :order => 'created_at'"
+    - "  default_scope order: 'created_at ASC'"
+    # parenthesized call form
+    - "  default_scope(where(active: true))"
+    # any relation method, not only where / order
+    - "  default_scope select([arel_table[:id], arel_table[:name]])"
+    - "  default_scope includes(:account)"
+  no_match:
+    - "  default_scope { where(active: true) }"
+    - "  default_scope  {where(active: true)}"
+    - "  default_scope do"
+    # a lambda or proc argument is callable, no warning on 4.0
+    - "  default_scope -> { where(active: true) }"
+    - "  default_scope(-> { where(active: true) })"
+    - "  default_scope lambda { where(active: true) }"
+    # a class-method override is a different shape
+    - "  def self.default_scope"
+    # comments and look-alike names
+    - "  # default_scope where(active: true)"
+    - "  default_scopes.any?"
+
+ASSOCIATION_CONDITIONS:
+  match:
+    - "  has_many :items, :conditions => \"active = 1\""
+  no_match:
+    - "  has_many :items, -> { where(active: true) }"
+
+ASSOCIATION_ORDER:
+  match:
+    - "  has_many :items, :order => 'position ASC'"
+  no_match:
+    # underscore before "order" (sort_order) must not trip the [^_] guard
+    - "  has_many :items, :sort_order => 'asc'"
+
+ASSOCIATION_EXTEND:
+  # Only belongs_to and has_one lose :extend at 4.0; collections keep it.
+  match:
+    - "  belongs_to :account, extend: AccountLookup"
+    - "  has_one :profile, :extend => ProfileMethods"
+    - "  belongs_to :owner, foreign_key: :owner_id, class_name: 'User', extend: OwnerMethods"
+    # (a declaration that continues after a trailing comma is matched across
+    # lines by the scanner, which this per-line fixture cannot show)
+  no_match:
+    # collection associations still accept :extend on 4.0
+    - "  has_many :items, :extend => ItemsExtension"
+    - "  has_and_belongs_to_many :tags, extend: TagMethods"
+    - "  has_many :items, -> { extending ItemsExtension }"
+    - "  belongs_to :account, -> { extending(AccountLookup) }"
+    # a has_one that only mentions an extension in its class name
+    - "  has_one :extended_profile, class_name: 'ProfileExtension'"
+    - "  # belongs_to :account, extend: AccountLookup"
+    # extend: inside a trailing comment
+    - "  has_one :profile, class_name: 'Profile' # extend: ProfileMethods"
+
+ASSOCIATION_UNIQ:
+  match:
+    - "  has_many :items, :uniq => true"
+  no_match:
+    - "  has_many :items, -> { distinct }"
+
+FINDER_SQL:
+  match:
+    - "  has_many :items, :finder_sql => 'SELECT * FROM items'"
+  no_match:
+    - "  has_many :items, -> { where(active: true) }"
+
+ASSOCIATION_OPTIONS_RUBY_23:
+  # Flags a Ruby 2.3+ version in the Gemfile or .ruby-version.
+  match:
+    - "ruby 2.4.10"
+    - "ruby '2.3.8'"
+    - 'ruby "2.4.10"'
+    - "2.3.8"
+    - "ruby-2.3.1"
+    - "ruby '~> 2.3.0'"
+    - "ruby '>= 2.3.1'"
+    - "2.4"
+    - "ruby-2.3"
+  no_match:
+    - "ruby '2.2.10'"
+    - "2.1.10"
+    - "ruby-2.0.0-p648"
+    - "ruby '~> 2.2.0'"
+    - "2.2"
+    - "gem 'rake', '2.3.1'"
+    - "# ruby '2.3.8'"
+
+FIND_ALL_BY:
+  match:
+    - "Model.send(:find_all_by_name, v)"
+    - "User.find_all_by_email(email)"
+    - "    users = account.users.find_all_by_role_and_active(\"admin\", true)"
+    # receiverless call inside a class method
+    - "    find_all_by_status(\"open\")"
+    - "  expect(Post.find_all_by_author_id(1).size).to eq(2)"
+  no_match:
+    - "User.where(email: email)"
+    # an app-defined method, not the Rails matcher
+    - "  def self.find_all_by_region(region)"
+    - "  def find_all_by_tag(tag)"
+    # stub symbol and spec label
+    - "    allow(User).to receive(:find_all_by_email).and_return([])"
+    - "  describe \"#find_all_by_region\" do"
+
+FIND_OR_CREATE_BY:
+  match:
+    - "send(\"find_or_create_by_#{attr}\", v)"
+    - "User.find_or_create_by_email(email)"
+    - "    tag = post.tags.find_or_create_by_name_and_kind(name, \"topic\")"
+    - "    Role.find_or_create_by_name!(\"admin\")"
+    # factory hook in a spec support file
+    - "  initialize_with { Category.find_or_create_by_name(name) }"
+  no_match:
+    - "User.find_or_create_by(email: email)"
+    - "User.where(email: email).first_or_create"
+    # an app-defined method, not the Rails matcher
+    - "    def find_or_create_by_owner(owner)"
+    - "    expect(Tag).to receive(:find_or_create_by_name).with(\"x\")"
+
+FIND_OR_INITIALIZE_BY:
+  match:
+    - "User.find_or_initialize_by_email(email)"
+    - "    code = Color.find_or_initialize_by_name_and_shade(\"red\", \"dark\")"
+    # receiverless call inside a class method
+    - "    find_or_initialize_by_slug(slug)"
+  no_match:
+    - "User.find_or_initialize_by(email: email)"
+    - "User.where(email: email).first_or_initialize"
+    # app-defined methods, not the Rails matcher
+    - "  def find_or_initialize_by_author_id(author_id)"
+    - "    def self.find_or_initialize_by_slot(slot, options = {})"
+    # stub symbol and spec label
+    - "      expect(memberships).to receive(:find_or_initialize_by_author_id).with(42)"
+    - "  describe \"#find_or_initialize_by_author_id\" do"
+
+FIND_LAST_BY:
+  match:
+    - "User.find_last_by_email(email)"
+    - "    visit = member.visits.find_last_by_status_and_kind(\"done\", \"exam\")"
+  no_match:
+    - "User.where(email: email).last"
+    - "  def self.find_last_by_date(date)"
+    - "    allow(Visit).to receive(:find_last_by_status).and_return(nil)"
+
+ASSOCIATION_READONLY:
+  match:
+    - "  has_many :items, :through => :orders, :readonly => true"
+  no_match:
+    - "  has_many :items, :through => :orders"
+
+RUBY_VERSION:
+  match:
+    - "ruby '1.8.7'"
+  no_match:
+    - "ruby '2.0.0'"
+
+MATCH_WITHOUT_VIA:
+  match:
+    - "  match '/users', to: 'users#index'"
+  no_match:
+    # via: present — the exclude regex must suppress this
+    - "  match '/users', to: 'users#index', via: :get"
+    # not a `match` route at all
+    - "  get '/users', to: 'users#index'"
+
+ROUTE_SCOPE_POSITIONAL_SYMBOL:
+  match:
+    - "  scope :reports, controller: \"reports\" do"
+    - "    scope :meta, controller: \"meta\", path: \"/\" do"
+    - "  scope :reports, :controller => \"reports\" do"
+    - "  scope(:reports) do"
+    - "  scope :reports do"
+    - "  scope :reports"
+    # a path: that only starts with the symbol is still overwritten by it
+    - "  scope :docs, path: \"docs/v1\" do"
+    # path: names a different segment that shares a prefix with the symbol
+    - "  scope :docs, path: \"doc\" do"
+    - "  scope :doc, path: :docs do"
+    # a second positional argument joins the path on 4.0 only
+    - "  scope :a, :b, path: \"a\" do"
+    - "  scope \"a\", \"b\" do"
+    # the path: belongs to a route inside the block, not to the scope
+    - "  scope :docs do resources :items, path: \"docs\" end"
+    - "  scope :\"foo-bar\" do"
+    - "  scope [:a, :b] do"
+    - "  scope %i[a b] do"
+    - "  constraints(subdomain: \"api\") { scope :v1 do"
+  no_match:
+    # the same segment as path: — a no-op on both versions
+    - "  scope :docs, controller: \"docs\", path: \"docs\" do"
+    - "  scope :docs, path: \"/docs\" do"
+    - "  scope :help, controller: :help, path: :help do"
+    - "  scope :docs, :path => \"docs\" do"
+    # keyword-only calls, both hash syntaxes
+    - "  scope path: \"admin\", controller: \"admin\" do"
+    - "  scope module: \"admin\" do"
+    - "  scope :path => \"admin\", :module => \"admin\" do"
+    - "  scope :module => \"admin\" do"
+    # a String first argument is the path on both versions
+    - "  scope \"legacy\", controller: \"legacy\" do"
+    - "  scope \"(:locale)\", locale: /en|de/ do"
+    # not a scope call
+    - "  resources :reports, only: :index"
+    - "  # scope :reports do"
+    - "  has_many :items, -> { where(active: true) }, scope: :active"
+
+WHINY_NILS:
+  match:
+    - "  config.whiny_nils = true"
+  no_match:
+    - "  config.active_record.whiny_nils = true"
+
+RESCUE_ACTION:
+  match:
+    - "  def rescue_action(exception)"
+  no_match:
+    - "  rescue_from StandardError do |e|"
+
+OBSERVERS:
+  match:
+    - "class UserObserver < ActiveRecord::Observer"
+    - "  config.active_record.observers = :user_observer"
+  no_match:
+    - "class UserPolicy"
+
+SWEEPERS:
+  match:
+    - "class ProductSweeper < ActionController::Caching::Sweeper"
+  no_match:
+    - "class ProductObserver < ActiveRecord::Observer"
+
+ACTION_CACHING:
+  # Pattern: caches_action / expire_action; page caching is PAGE_CACHING.
+  match:
+    - "  caches_action :index"
+    - "  caches_action :show, :layout => false, :expires_in => 1.hour"
+    - "    expire_action :controller => 'products', :action => 'index'"
+  no_match:
+    - "  caches_page :show"
+    - "  fragment_cache_key 'products'"
+    - "    expire_fragment('products/sidebar')"
+    - "  # caches_action :index"
+
+PAGE_CACHING:
+  # Pattern: caches_page / expire_page / page_cache_directory.
+  match:
+    # the 3.2 cache_page writer, called by hand
+    - "    cache_page(response.body, request.path)"
+    - "    self.class.cache_page(content, path)"
+    - "  caches_page :show"
+    - "  caches_page :feed, if: Proc.new { |c| !c.request.format.html? }"
+    - "    expire_page :controller => 'products', :action => 'show', :id => product.id"
+    - "  config.action_controller.page_cache_directory = Rails.root.join('public', 'cache').to_s"
+  no_match:
+    - "  caches_action :index"
+    - "  # caches_page :show"
+    # page_cache_extension is still in 4.0 core, as a deprecated alias
+    - "  self.page_cache_extension = '.html'"
+
+ACTIVE_RESOURCE:
+  match:
+    - "class Product < ActiveResource::Base"
+  no_match:
+    - "class Product < ApplicationRecord"
+
+CACHE_KEY_FORMAT:
+  match:
+    - "  self.cache_timestamp_format = :number"
+    - "    config.active_record.cache_timestamp_format = :number"
+    # a record's cache_key stored or compared outside the cache
+    - "    update_column(:etag, record.cache_key)"
+    - "    stale = stored_key != @account.cache_key"
+    # receiverless inside the model, used as a value
+    - "    update_column(:etag, cache_key)"
+    - "    self.etag = cache_key"
+    - "    Sync.push(key: cache_key)"
+    # a Rails.cache call on a line that also compares a stored key
+    - "    stale = Rails.cache.read(:etag) != record.cache_key"
+  no_match:
+    - "  def self.cache_key"
+    # the app's own cache_key method taking an argument, or defining one
+    - "    Rails.cache.fetch(cache_key(:totals)) do"
+    - "    Rails.cache.fetch(report.cache_key(:monthly_totals))"
+    - "  def cache_key(name)"
+    - "  def cache_key"
+    # a local variable with the same name, assigned or handed to the cache
+    - "    cache_key = \"settings_for_#{id}\""
+    - "    cache_key ||= compute_key"
+    - "    cache_key << record.id.to_s"
+    - "    settings = Rails.cache.fetch(cache_key, expires_in: 12.hours) do"
+    - "  = cache cache_key do"
+    # look-alike names and a symbol
+    - "    return unless account_cache_key.present?"
+    - "    @cache_key = build_key"
+    - "    options = { cache_key: 1 }"
+    # model_name.cache_key has no timestamp
+    - "    \"#{self.class.model_name.cache_key}/#{id}\""
+    - "  def display_name; name; end"
+    # a comment that mentions it
+    - "    # cache_key is used below"
+
+BUFFERED_LOGGER:
+  match:
+    - "config.logger = ActiveSupport::BufferedLogger.new(log_path)"
+  no_match:
+    - "config.logger = ActiveSupport::Logger.new(log_path)"
+
+ASSETS_COMPRESS:
+  match:
+    - "  config.assets.compress = true"
+  no_match:
+    - "  config.assets.js_compressor = :uglifier"
+
+NON_DIGEST_ASSET_PATHS:
+  # Pattern: "[\"'(]\\s*/assets/"
+  # A literal /assets/ path opened by a quote or a paren.
+  match:
+    # an exact-match attribute selector depends on the non-digest name
+    - "  $('img[src=\"/assets/logo.png\"]').hide()"
+    # plain CSS url() without quotes
+    - "  background: url(/assets/icons/arrow.png) no-repeat;"
+    # quoted url() in SCSS
+    - "  background-image: url(\"/assets/backgrounds/stripes.png\");"
+    # string literal in plain JavaScript
+    - "    icon.src = '/assets/spinner.gif';"
+    # HAML attribute hash
+    - "%link{ href: '/assets/favicons/apple-touch-icon.png', rel: 'apple-touch-icon' }"
+    # ERB markup
+    - "<img src=\"/assets/logo.png\" alt=\"Logo\">"
+    # a path that already carries a digest still breaks at the bump
+    - "  background: url(/assets/shared/calendar-5f2b9c0d1e3a4b6c7d8e9f0a1b2c3d4e.svg);"
+    # Paperclip-style default in a model or initializer
+    - "  has_attached_file :avatar, default_url: \"/assets/missing.png\""
+    # the leading paren of a helper call does not make the literal path safe
+    - "  background: url(image_path(\"/assets/backgrounds/grid.png\"));"
+  no_match:
+    # CSS block comment lines
+    - "/* old: url(/assets/x.png) */"
+    - " * url(/assets/x.png)"
+    # asset helpers resolve the digest themselves
+    - "= image_tag \"logo.png\""
+    - "  background-image: image-url(\"backgrounds/stripes.png\");"
+    # a full URL on another host is not served by this app's pipeline
+    - "  background: url(\"https://cdn.example.com/assets/x.svg\");"
+    # the prefix setting itself carries no trailing slash
+    - "  config.assets.prefix = \"/assets\""
+    # a local path with assets further down is not a pipeline path
+    - "  File.join(Rails.root, \"app/assets/images\")"
+    # commented-out references in Ruby, HAML and JavaScript
+    - "  # icon = \"/assets/old_icon.png\""
+    - "  -# %img{ src: '/assets/old_icon.png' }"
+    - "  // icon.src = '/assets/old_icon.png';"
+    # a CSS attribute selector that tests for the prefix is not a reference
+    - "    expect(wrapper.find('img[src^=\"/assets/\"]')).toHaveLength(0)"
+
+CSS_COMPRESSOR_MINIFIED_GUARD:
+  # Pattern: a whole file with at most two newlines and a line of 300+ chars.
+  # Each fixture string stands for a whole file, embedded newlines included.
+  match:
+    # minified on one line, no trailing newline
+    - ".w-btn{display:inline-block;padding:4px 8px;border:1px solid #ccc}.w-tab{display:inline-block;padding:4px 8px;border:1px solid #ccc}.w-row{display:inline-block;padding:4px 8px;border:1px solid #ccc}.w-col{display:inline-block;padding:4px 8px;border:1px solid #ccc}.w-nav{display:inline-block;padding:4px 8px;border:1px solid #ccc}"
+    # license banner on line one, minified rules on line two
+    - "/*! widget v2.1.0 | MIT */\n.w-btn{display:inline-block;padding:4px 8px;border:1px solid #ccc}.w-tab{display:inline-block;padding:4px 8px;border:1px solid #ccc}.w-row{display:inline-block;padding:4px 8px;border:1px solid #ccc}.w-col{display:inline-block;padding:4px 8px;border:1px solid #ccc}.w-nav{display:inline-block;padding:4px 8px;border:1px solid #ccc}\n"
+  no_match:
+    # three or more newlines: 3.2's guard sent this to Sass too
+    - ".w-btn{display:inline-block;padding:4px 8px;border:1px solid #ccc}.w-tab{display:inline-block;padding:4px 8px;border:1px solid #ccc}.w-row{display:inline-block;padding:4px 8px;border:1px solid #ccc}.w-col{display:inline-block;padding:4px 8px;border:1px solid #ccc}.w-nav{display:inline-block;padding:4px 8px;border:1px solid #ccc}\n.a{color:red}\n.b{color:blue}\n"
+    # an authored stylesheet
+    - ".banner {\n  color: #333;\n}\n"
+    # a short one-line file is not minified vendor CSS
+    - ".hidden{display:none}"
+
+FIELD_HELPERS_SYMBOLS:
+  # Pattern: any reference to field_helpers; lines already normalized are skipped.
+  match:
+    - "  (field_helpers - %w(label fields_for hidden_field)).each do |helper|"
+    - "  helpers = field_helpers +"
+    - "    next unless self.class.field_helpers.include?(\"text_field\")"
+    - "  wrapped = field_helpers.reject { |h| h == \"label\" }"
+  no_match:
+    # already normalized to one element type
+    - "  (field_helpers.map(&:to_s) - %w(label fields_for)).each do |helper|"
+    - "  (field_helpers.map(&:to_sym) - [:label, :fields_for]).each do |helper|"
+    # a longer identifier is not the class attribute
+    - "  custom_field_helpers_list = []"
+    # commented-out reference
+    - "  # field_helpers - %w(label)"
+
+INSTALL_HELPERS_REMOVED:
+  # Pattern: "\\binstall_helpers\\b"; definitions and comments are skipped.
+  match:
+    - "  Rails.application.routes.install_helpers(self)"
+    - "      route_set.install_helpers"
+    - "    routes.install_helpers [ReportMailer, PdfRenderer]"
+  no_match:
+    # the replacement
+    - "  include Rails.application.routes.url_helpers"
+    # a method of the app's own that happens to share the name
+    - "  def install_helpers"
+    - "  def self.install_helpers(target)"
+    # a longer identifier
+    - "  reinstall_helpers_cache!"
+    # commented-out call
+    - "  # Rails.application.routes.install_helpers(self)"
+
+CONFIG_ROUTES_PATH:
+  match:
+    - "  config.paths[\"config/routes\"].concat %w(lib/custom_routes)"
+  no_match:
+    # exclude: routes.rb — a comment/reference to routes.rb on the same line
+    # suppresses the match even though "config/routes" is present too
+    - "  config.paths[\"config/routes\"].concat(Dir[Rails.root.join('config/routes.rb')])"
+
+ASSIGN_ATTRIBUTES_OPTIONS:
+  match:
+    - "  obj.assign_attributes(params, as: :admin)"
+  no_match:
+    - "  obj.assign_attributes(params)"
+
+RUN_VALIDATION_CALLBACKS:
+  match:
+    - "  _run_validation_callbacks"
+  no_match:
+    - "  run_callbacks(:validation)"
+
+SELECT_DISTINCT_PLUCK:
+  match:
+    - "User.select('distinct email').pluck(:email)"
+  no_match:
+    - "User.distinct.pluck(:email)"
+
+IMMUTABLE_RELATION:
+  match:
+    - "User.where(active: true).count('distinct email')"
+  no_match:
+    - "User.distinct.count"
+
+FIXTURE_DATES:
+  match:
+    - "created_at: <%= 3.days.ago %>"
+  no_match:
+    - "created_at: <%= 3.days.ago.to_s(:db) %>"
+
+UPDATE_ALL_TWO_ARG:
+  # The whole-file scanner (scan_patterns.rb) also reaches a first argument
+  # and conditions on separate lines; a line-based search does not. Fixtures
+  # test one line at a time.
+  match:
+    - "User.update_all(\"active = false\", [\"id = ?\", 1])"
+    # array first argument
+    - "User.update_all([\"count = ?\", n], [\"id = ?\", id])"
+    - "User.update_all([\"count = ?\", n], id: id)"
+    - "    User.update_all({ active: false }, { id: ids })"
+    - "    self.class.update_all({ synced_at: now }, id: id)"
+    - "    Item.update_all(\"price = 0\", \"archived = 1\")"
+    - "    Product.update_all(row.to_hash, { sku: row[:sku] }, limit: 1)"
+    - "      update_all(values, lookup_column => value)"
+    - "  model.update_all(set_sql(column), where_sql(column))"
+    - "    Item.update_all \"price = 0\", \"archived = 1\""
+  no_match:
+    # a one-argument keyword hash written without a space after the colon
+    - "    Item.update_all(price:0, color: \"blue\")"
+    - "  def update_all(updates, conditions = nil)"
+    - "User.where(id: 1).update_all(active: false)"
+    # one array argument
+    - "User.where(id: 1).update_all([\"count = ?, name = ?\", n, name])"
+    # one braceless hash argument
+    - "    Widget.update_all(active: false, synced_at: now)"
+    - "    admins.update_all is_owner: false"
+    - "    Widget.update_all(:active => false, :synced_at => now)"
+    # commas inside the single argument
+    - "      .update_all(assignments.join(\", \"))"
+    - "    Report.where(id: report.id).update_all(tags: [\"a\", \"b\"].to_yaml)"
+    - "    Widget.update_all(\"name = x, code = y\")"
+    # a method whose name ends in update_all
+    - "    batch_update_all(rows, { id: 1 })"
+    - "  # update_all(set, conditions) is gone in 4.1"
+
+OLD_FINDER:
+  match:
+    - "User.find(:first, conditions: { active: true })"
+  no_match:
+    - "User.where(active: true).first"
+
+REQUEST_ENV_MERGE:
+  match:
+    - "request.env.merge!('HTTP_AUTHORIZATION' => token)"
+  no_match:
+    - "request.headers.merge!('HTTP_AUTHORIZATION' => token)"
+
+DUPLICATE_ROOT_ROUTES:
+  # Pattern: a root declaration in any hash or string form; `as:` names it.
+  # Rails 4 rejects a second `root`; flag every root declaration so a human can
+  # count them (a lone hit is noise, 2+ is the breaking case).
+  match:
+    # as: :root registers :root again, and a comment cannot name the route
+    - "  root to: 'pages#home', constraints: WwwConstraint, as: :root"
+    - "  root to: 'pages#home' # was , as: :home"
+    # hash form with to:
+    - "  root to: \"home#index\""
+    # legacy hash-rocket form
+    - "  root => \"home#index\""
+    # Rails 4 double-quoted string shorthand
+    - "  root \"home#index\""
+    # Rails 4 single-quoted string shorthand
+    - "  root 'home#index'"
+    # 3.2-era hash rocket on :to
+    - "  root :to => 'pages#home', :constraints => WwwConstraint"
+    # controller / action keys and the paren form
+    - "  root controller: \"pages\", action: \"home\""
+    - "  root(to: \"pages#home\")"
+    # a trailing comment mentioning as: does not name the route
+    - "  root to: \"pages#home\" # TODO add as: :www_root"
+  no_match:
+    # a root with its own name does not register :root
+    - "  root to: \"accounts#show\", constraints: SubdomainConstraint, as: :account_root"
+    - "  root :to => 'accounts#show', :as => :account_root"
+    # a root_path helper call is not a declaration
+    - "    redirect_to root_path"
+    # a non-root route must not flag
+    - "  get \"/\", to: \"home#index\""
+    # a commented-out root declaration is not live (line-anchored pattern)
+    - "  # root to: \"home#index\""
+
+ROUTES_CONTROLLER_NAMES:
+  # Pattern: "\\bto:\\s*['\"][^'\"]*(-|[A-Z])[^'\"]*#"
+  # Rails 4 rejects hyphen/CamelCase controller names in to:; both quote styles.
+  match:
+    # double-quoted hyphenated controller
+    - "  get \"widgets\", to: \"my-pages#show\""
+    # double-quoted CamelCase controller
+    - "  get \"widgets\", to: \"MyPages#show\""
+    # single-quoted hyphenated controller
+    - "  get \"widgets\", to: 'my-pages#show'"
+    # single-quoted CamelCase controller
+    - "  get \"widgets\", to: 'MyPages#show'"
+    # a trailing comment on a live route line still flags
+    - "  get \"widgets\", to: \"MyPages#show\" # legacy alias"
+  no_match:
+    # hyphen only in the URL path, controller is fine
+    - "  get \"my-widgets\", to: \"pages#show\""
+    # already snake_case controller
+    - "  get \"widgets\", to: \"my_pages#show\""
+    # a commented-out route must not flag (excluded via ^\\s*#)
+    - "  # get \"widgets\", to: \"MyPages#show\""
+
+ROUTES_TOP_LEVEL_MODULE_AUTOLOAD:
+  # Pattern: "^\\s*module\\s+[A-Z]\\w*"
+  # Top-level module definitions inside config/routes/ break on reload.
+  match:
+    # the canonical constraints module definition
+    - "  module Constraints"
+    # any single-segment module definition
+    - "module Api"
+    # compact-nested definition must also flag
+    - "  module Constraints::Admin"
+  no_match:
+    # scope module: option is not a module definition
+    - "  scope module: \"admin\" do"
+    # using a constant is not defining a module
+    - "  constraints Constraints::Admin do"
+
+VALIDATES_FORMAT_OF_ANCHORS:
+  # Flags a format-validator regex literal that starts with ^ or ends with an
+  # unescaped $, the same rule Rails 4.0 applies before raising.
+  # A call whose options continue after a trailing comma or an opening `{`
+  # (`format: {` at the end of the line, `with:` on the next) is matched across
+  # lines by scan_patterns.rb; this per-line fixture cannot show it.
+  match:
+    # leading ^ and trailing $
+    - '  validates_format_of :email, with: /^[a-z]+$/'
+    # trailing $ only, and a leading ^ only with a flag after the regex
+    - '  validates_format_of :name, with: /foo$/'
+    - '  validates_format_of :name, with: /^foo/i'
+    # hash-rocket syntax common in 3.2-era code
+    - '  validates_format_of :email, :with => /^[a-z]+$/'
+    # without: is checked the same way
+    - '  validates_format_of :code, without: /^tmp/'
+    # the validates form, with a hash or a bare regex
+    - '  validates :email, format: { with: /^x$/ }'
+    - '  validates :zip, presence: true, format: { with: /\d{5}$/, allow_blank: true }'
+    - '  validates :code, format: /^[A-Z]{3}$/'
+    # %r{} literal
+    - '  validates_format_of :path, with: %r{^[a-z/]+$}'
+    # explicit receiver
+    - '  model_class.validates_format_of :slug, with: /^[a-z-]+$/'
+  no_match:
+    # already rewritten to \A / \z
+    - '  validates_format_of :email, with: /\A[a-z]+\z/'
+    - '  validates_format_of :email, :with => /\Afoo\z/'
+    # ^ inside a character class and $ in the middle do not raise
+    - '  validates_format_of :email, with: /\A[^@\s]+@[^@\s]+\z/'
+    - '  validates :email, format: { with: /\A[^@]+\z/ }'
+    - '  validates_format_of :ratio, with: /\Aa$b\z/'
+    # an escaped \$ at the end is a literal dollar sign
+    - '  validates_format_of :price, with: /\A\d+\$/'
+    # multiline: true turns the check off
+    - '  validates_format_of :body, with: /^foo$/, multiline: true'
+    # a constant is out of reach of a line regex
+    - '  validates_format_of :key, with: KEY_FORMAT'
+    # commented out
+    - '  # validates_format_of :name, with: /^foo$/'
+    # validates_with is a different API
+    - '  validates_with SlugValidator, with: /^x/'
+    # with: given to a validator other than format never raises
+    - '  validates :phone, phone: { with: /^x$/ }'
+    - '  validates :zip, format: { with: /\A\d+\z/ }, phone: { with: /^x$/ }'
+
+VALIDATES_FORMAT_OF_ANCHORS_CONSTANT_BOUND:
+  # Pattern: "Regexp\\.new\\(.*[\\^$]"
+  # Flags a ^ / $ inside a Regexp.new(...) constant definition.
+  match:
+    # %q-quoted source with leading ^ and trailing $
+    - '  EMAIL = Regexp.new(%q{^[^@]+@[^@]+$})'
+    # double-quoted source with a leading ^
+    - '  RE = Regexp.new("^foo")'
+  no_match:
+    # no anchors at all
+    - '  RE = Regexp.new("foo")'
+    # already rewritten to \A / \z
+    - '  RE = Regexp.new(%q{\Afoo\z})'
+
+ACCEPTS_NESTED_NO_REFLECTION:
+  # Pattern: "accepts_nested_attributes_for\\b"
+  # Flags every accepts_nested_attributes_for call; the breaking case is an
+  # operator judgment (inherited-from-bumped-gem association), not regex-decidable.
+  match:
+    - '  accepts_nested_attributes_for :items'
+    - '  accepts_nested_attributes_for :items, allow_destroy: true'
+  no_match:
+    # an unrelated association declaration
+    - '  has_many :items, dependent: :destroy'
+    # \b boundary: a longer identifier with the _for_ suffix is not the macro
+    - '  def accepts_nested_attributes_for_stuff'
+
+PAPER_TRAIL_STRING_VERSIONS:
+  # Pattern: "has_paper_trail.*\\bversions?\\s*(?::|=>)\\s*[\"']"
+  # String association name in has_paper_trail's versions:/version: option;
+  # matches 1.9 and hash-rocket syntax, both quote styles. Symbol form is the fix.
+  match:
+    # 1.9 hash, plural
+    - '  has_paper_trail versions: "audits"'
+    # 1.9 hash, singular
+    - '  has_paper_trail version: "audit"'
+    # hash-rocket, common in 3.2-era code
+    - '  has_paper_trail :versions => "audits"'
+    # other options before the string versions:
+    - '  has_paper_trail class_name: "PT", versions: "audits"'
+  no_match:
+    # symbol value — the fixed, backwards-compatible form
+    - '  has_paper_trail versions: :audits'
+    # hash-rocket symbol value — also fixed
+    - '  has_paper_trail :versions => :audits'
+    # commented-out declaration is inert
+    - '  # has_paper_trail versions: "audits"'
+
+VALIDATES_AS_PARANOID:
+  # Pattern: "\\bvalidates_as_paranoid\\b"
+  # rails3_acts_as_paranoid DSL; \b avoids longer identifiers.
+  match:
+    - '  validates_as_paranoid'
+  no_match:
+    # a longer identifier is not the DSL call
+    - '  validates_as_paranoid_extra'
+    # commented-out call is inert
+    - '  # validates_as_paranoid'
+
+JS_COMPRESSOR_GEM_MISMATCH:
+  # The lookbehind also skips a line right after `unless next?` or
+  # `unless NextRails.next?` (the 3.2 side of the block form) and after an
+  # `else` that ends in CRLF; that needs the line before, so it is proved with
+  # pattern_lab.rb scan, not with these one-line fixtures.
+  # Pattern: a Gemfile line declaring terser, unless the line before it is `else`
+  # (the 3.2 branch of the fix). Strings with \n stand for two consecutive lines.
+  match:
+    - 'gem "terser"'
+    - "  gem 'terser', '~> 1.2'"
+    # a trailing comment does not count as the fix
+    - '  gem "terser" # needs require: false on the next side'
+    # unfixed, with an unrelated line before it
+    - "group :assets do\n  gem \"terser\""
+  no_match:
+    # the fixed next-side declaration, both hash syntaxes
+    - '    gem "terser", require: false'
+    - "    gem 'terser', :require => false"
+    # uglifier and closure-compiler do not load sprockets/digest_utils
+    - '  gem "uglifier", ">= 1.3.0"'
+    - '  gem "closure-compiler"'
+    # a commented-out declaration
+    - '# gem "terser"'
+    # the fixed Gemfile: next-side line, then the 3.2 line in the else branch
+    - "    gem \"uglifier\", \">= 1.3.0\"\n    gem \"terser\", require: false"
+    - "  else\n    gem \"terser\""
+    - "  gem \"terser\" unless next?"
+    - "  gem 'terser' unless NextRails.next?"
+
+COLLECTION_PROXY_ENUMERABLE_GUARD:
+  # Pattern: "(?:is_a\\?|kind_of\\?)\\s*\\(?\\s*Enumerable\\b"
+  # is_a?/kind_of? Enumerable guard, with or without parens; \b avoids Enumerable-prefixed names.
+  match:
+    - '  return true if value.is_a?(Enumerable)'
+    - '  return true if value.kind_of?(Enumerable)'
+    - '  return true if value.is_a? Enumerable'
+  no_match:
+    # a longer constant name is not Enumerable
+    - '  return true if value.is_a?(EnumerableThing)'
+    # commented-out line is inert
+    - '  # value.is_a?(Enumerable)'
+
+HWIA_CONVERT_VALUE_OVERRIDE:
+  # Pattern: "def convert_value\\(\\s*\\w+\\s*\\)"
+  # 1-arg override of HashWithIndifferentAccess#convert_value, any param name.
+  match:
+    - '  def convert_value(value)'
+    - '  def convert_value(v)'
+  no_match:
+    # the correct 2-arg form must not flag
+    - '  def convert_value(value, _options = {})'
+    # a different method with a _for suffix
+    - '  def convert_value_for(x)'
+    # commented-out line is inert
+    - '  # def convert_value(v)'
+
+RACK_LOCK_MIDDLEWARE:
+  # Pattern: "config\\.middleware\\.(insert|insert_before|insert_after|swap)[\\s(]+[\"']?(?:::)?Rack::Lock"
+  # Positioning calls naming Rack::Lock as target; excludes index-insert / delete / use.
+  match:
+    - '    config.middleware.insert_before Rack::Lock, Foo'
+    - '    config.middleware.insert_after(Rack::Lock, Foo)'
+    - '    config.middleware.swap Rack::Lock, Bar'
+    # leading :: qualified target
+    - '    config.middleware.insert_before ::Rack::Lock, Foo'
+    # string target form
+    - '    config.middleware.insert_before "Rack::Lock", Foo'
+  no_match:
+    # integer-index insert names no middleware target
+    - '    config.middleware.insert(0, Foo)'
+    # delete / use do not raise on a missing target
+    - '    config.middleware.delete Rack::Lock'
+    - '    config.middleware.use Rack::Lock'
+    # commented-out line is inert
+    - '    # config.middleware.insert_before Rack::Lock'
+
+REMOTE_FORM_CSRF_TOKEN:
+  # Pattern: form helpers carrying remote: true (either hash syntax).
+  # Remote links and plain forms are not affected.
+  match:
+    - "= form_for @x, html: { data: { confirm: \"#{t(:sure)}\" } }, remote: true do |f|"
+    - '= form_for @user, remote: true do |f|'
+    - '  <%= form_tag(search_path, remote: true) do %>'
+    - '= form_for @person, :remote => true, html: { class: "opt-in-form" } do |f|'
+    - '= simple_form_for @user, remote: true do |f|'
+    - '= form_for [account, project], url: settings_path, remote: true do |f|'
+    # html: { remote: true } is turned into data-remote the same way
+    - '= form_for @note, html: { remote: true, class: "note-form" } do |f|'
+    # an explicit data-remote key in the html options, rocket and quoted-symbol forms
+    - '= form_for [project, task], :builder => TaskFormBuilder, :html => { :"data-remote" => true } do |f|'
+    - '  <%= form_tag search_path, "data-remote": "true" do %>'
+    - '= semantic_form_for @order, remote: true do |f|'
+    # options hash built on an earlier line, then passed to a form helper
+    - '    html_options[:"data-remote"] = true'
+    - '    form_options[:remote] = true'
+    # HAML id shorthand is not a comment
+    - '#search= form_tag search_path, remote: true do'
+    # a remote: true outside the data hash still drops the token
+    - '= form_for @note, remote: true, html: { data: { remote: true } } do |f|'
+    - '= form_for @note, html: { data: { confirm: "Sure?" } }, remote: true do |f|'
+  no_match:
+    # a string-keyed data hash is stringified to the same data hash that keeps the token
+    - '= form_for @post, html: { "data" => { remote: true } } do |f|'
+    - "= form_for @x, data: { remote: true, t: \"#{x}\" } do |f|"
+    # data: { remote: true } keeps the hidden token on 4.0, whatever else the hash holds
+    - '= form_for @note, html: { data: { remote: true } } do |f|'
+    - '= form_for @note, html: { data: { remote: true, type: :json } } do |f|'
+    - '= form_tag notes_path, :data => { :type => :json, :remote => true } do'
+    # link options hash literal, not an assignment
+    - "    { \"data-remote\": \"true\", \"data-type\": \"html\" }"
+    # a hand-written form tag gets no token from Rails on either version
+    - "  %form#search{ action: search_path, :\"data-remote\" => true }"
+    # commented-out forms in HAML, ERB and Ruby
+    - '-#= form_for @report, url: reports_path, remote: true do |f|'
+    - '<%#= form_for @report, remote: true do |f| %>'
+    - '  # form_for @report, remote: true'
+    # a longer method name that merely ends in form_for
+    - '= custom_form_for_widget @report, remote: true'
+    # remote link_to: UJS builds the form and its token itself
+    - '= link_to "Delete", user_path(user), remote: true, method: :delete'
+    # button_to renders its own token_tag on POST, regardless of this config
+    - '= button_to "Save", settings_path, remote: true'
+    # not a remote form
+    - '= form_for @user do |f|'
+    # the config pin itself, not a form
+    - '    config.action_view.embed_authenticity_token_in_remote_forms = true'
+
+ORDER_WITHOUT_ARGUMENTS:
+  # Pattern: a bare order/reorder with nothing to sort by. Requires either a
+  # relation method right after the call, or empty parentheses, so
+  # that reading an `order` association or column does not get flagged.
+  match:
+    - '        link = Membership.where(user_id: user_id).order.last'
+    - '    scope.reorder.to_a'
+    - '    Widget.where(active: true).order.first'
+    - '    Widget.order().each { |w| puts w }'
+  no_match:
+    # reading an order association or column, by far the common case
+    - '    total = line_item.order.total'
+    - '    payment.order'
+    # already naming a column
+    - '    Widget.order(:id).last'
+    - '    Widget.order("id ASC").first'
+    - '    Widget.reorder(:created_at).to_a'
+    # method names that merely start with a relation method
+    - '    total = line_item.order.summary'
+    - '    items = invoice.order.selected_items'
+    - '    n = line_item.order.counts'
+    # nil / [] are not blank? once splatted, so these never raise on 4.0.
+    # reorder(nil) is the documented way to clear a default order.
+    - '    Widget.order(nil).count'
+    - '    Widget.reorder([]).pluck(:id)'
+    - '    Widget.reorder(nil).to_a'
+    # different method entirely
+    - '    Widget.order_by(:id).last'
+    # a minified JavaScript line (500+ characters) with a d3-style .order() call
+    - '!function(n){var t=n.layout.stack();n.x=t.y(n.x)+n.dx;n.x=t.y(n.x)+n.dx;n.x=t.y(n.x)+n.dx;n.x=t.y(n.x)+n.dx;n.x=t.y(n.x)+n.dx;n.x=t.y(n.x)+n.dx;n.x=t.y(n.x)+n.dx;n.x=t.y(n.x)+n.dx;n.x=t.y(n.x)+n.dx;n.x=t.y(n.x)+n.dx;n.x=t.y(n.x)+n.dx;n.x=t.y(n.x)+n.dx;n.x=t.y(n.x)+n.dx;n.x=t.y(n.x)+n.dx;n.x=t.y(n.x)+n.dx;n.x=t.y(n.x)+n.dx;n.x=t.y(n.x)+n.dx;n.x=t.y(n.x)+n.dx;n.x=t.y(n.x)+n.dx;n.x=t.y(n.x)+n.dx;n.x=t.y(n.x)+n.dx;n.x=t.y(n.x)+n.dx;n.x=t.y(n.x)+n.dx;n.x=t.y(n.x)+n.dx;n.x=t.y(n.x)+n.dx;n.x=t.y(n.x)+n.dx;return t.order()}(d3)'
+
+SQUEEL_ORDER_JOINED_TABLE:
+  # Pattern: a hash anywhere in an order / reorder argument list whose value
+  # is not exactly :asc or :desc. The whole-file scanner (scan_patterns.rb)
+  # also reaches a hash spread over several lines; a line-based search does
+  # not. Fixtures test one line at a time.
+  match:
+    - "          .order(tags: :id)"
+    - "          .order({ task_items: :month })"
+    - "    relation.order(:event => :start)"
+    - "    relation.order({:event => :start})"
+    - "    relation.order(event: :start).where(:description => x)"
+    - "    Widget.reorder(events: :start)"
+    # 4.0 accepts only the lowercase symbols
+    - "    Widget.order(name: :DESC)"
+    - "    Widget.order(name: \"desc\")"
+    - "    Widget.order(name: :ascending)"
+    - "    Widget.order(created_at: direction)"
+    # the hash after a leading argument, or next to a valid pair
+    - "    Widget.order(:position, name: :foo)"
+    - "    Widget.order(\"x\", \"events\" => :start)"
+    - "    Widget.order(name: :asc, events: :start)"
+    - "    Widget.order({ name: :asc, events: :start })"
+    - "    Widget.order([{ name: :x }])"
+    # a leading argument with one level of parentheses
+    - "    Widget.order(Arel.sql(\"x\"), events: :start)"
+    - "    Widget.order(sort_key(:a), name: \"desc\")"
+    # a valid call earlier on the line must not hide the bad one
+    - "    Widget.order(id: :desc).order(events: :start)"
+  no_match:
+    - "  # Widget.order(events: :start)"
+    # legitimate direction hashes
+    - "    Widget.order(name: :asc)"
+    - "    Widget.order(id: :desc)"
+    - "    Widget.order({ id: :desc })"
+    - "    Widget.order(:position, name: :desc)"
+    - "    Widget.order(name: :asc, id: :desc)"
+    # method names merely ending in \"order\", and order as a keyword key
+    - "    work_order(status: :open)"
+    - "    set_sort_order(field: :name)"
+    - "    service.call(order: :recent)"
+    - "    args = parser.order!(ARGV) {}"
+    # string, symbol, array, Arel and constant forms are unaffected
+    - "    Widget.order(\"events.start ASC\")"
+    - "    Widget.order(\"id DESC, name ASC\")"
+    - "    Widget.order(:start)"
+    - "    Widget.order([:is_primary, :name])"
+    - "    Widget.order(arel_table[:key])"
+    - "    Widget.order(updated_at.desc, :id)"
+    - "    Widget.order(Report::SORT)"
+    - "    Widget.order(ready ? \"a\" : \"b\")"
+    - "    Widget.order(:name).where(state: :open)"
+    - "    Widget.order(Arel.sql(\"x\"), name: :desc)"
+    - "    Widget.order(coalesce(a, b: :c))"
+
+BELONGS_TO_DEPENDENT:
+  match:
+    - "  belongs_to :document, dependent: :destroy"
+    - "  belongs_to :content, polymorphic: true, dependent: :destroy"
+    - "  belongs_to :document, foreign_key: :resource_id, dependent: :destroy"
+    # 3.2-era hash-rocket syntax is common in the code being upgraded.
+    - "  belongs_to :document, :dependent => :destroy"
+    # Commented-out declarations are flagged on purpose: a commented cascade is
+    # still worth a look when tracing a cycle, and dropping it is a one-line dismissal.
+    - "  # belongs_to :document, dependent: :destroy"
+  no_match:
+    # dependent: :delete deletes without running callbacks, so it cannot close a
+    # cycle. :destroy and :delete are the only options belongs_to accepts (4.0
+    # builder/belongs_to.rb valid_dependent_options), so :destroy is the full set.
+    - "  belongs_to :brand, dependent: :delete"
+    # Only belongs_to moved phase in 4.0; has_one/has_many were already before_destroy.
+    - "  has_one :attachment, dependent: :destroy"
+    - "  has_many :comments, dependent: :destroy"
+    # A belongs_to without a cascade is unaffected.
+    - "  belongs_to :creator, class_name: \"Person\""
+    - "  belongs_to :organization"

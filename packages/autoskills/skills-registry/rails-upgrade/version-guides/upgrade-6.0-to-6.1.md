@@ -21,7 +21,31 @@ Rails 6.1 introduces:
 
 ### 🔴 HIGH PRIORITY
 
-#### 1. config_for Returns HashWithIndifferentAccess
+#### update_attributes Removed
+
+**What Changed:**
+`update_attributes` and `update_attributes!`, deprecated aliases of `update` and `update!` in 6.0, are removed. Every call raises `NoMethodError`, including calls through `send(:update_attributes, ...)`. There is no patterns file for this hop, so search for them by hand: `grep -rnw update_attributes app lib spec test`, which also finds the `!` form.
+
+**Detection Pattern:**
+```ruby
+user.update_attributes(name: 'New Name')
+user.update_attributes!(name: 'New Name')
+```
+
+**Fix:**
+```ruby
+# BEFORE
+user.update_attributes(name: 'New Name')
+
+# AFTER
+user.update(name: 'New Name')
+```
+
+`update` exists on 6.0 as well, so the rewrite can land before the version bump with no `NextRails.next?` branch.
+
+---
+
+#### config_for Returns HashWithIndifferentAccess
 
 **What Changed:**
 `Rails.application.config_for` now returns `ActiveSupport::HashWithIndifferentAccess` instead of `Hash`.
@@ -44,7 +68,7 @@ if config.key?(:database) || config.key?("database")
 
 ---
 
-#### 2. respond_to#any Content-Type Change
+#### respond_to#any Content-Type Change
 
 **What Changed:**
 `respond_to#any` now returns `text/html` Content-Type instead of `*/*`.
@@ -73,7 +97,7 @@ end
 
 ---
 
-#### 3. HTTPS Redirects Use 308 Status
+#### HTTPS Redirects Use 308 Status
 
 **What Changed:**
 `config.force_ssl` now uses HTTP status 308 instead of 301 for redirects.
@@ -90,7 +114,7 @@ config.ssl_options = { redirect: { status: 301 } }
 
 ---
 
-#### 4. ActiveSupport::Callbacks Default Changed
+#### ActiveSupport::Callbacks Default Changed
 
 **What Changed:**
 `:unless` and `:if` callbacks now default to `:before` rather than `:after`.
@@ -110,7 +134,7 @@ set_callback :save, :around, :my_callback, if: :condition, prepend: true
 
 ### 🟡 MEDIUM PRIORITY
 
-#### 5. ActiveRecord::Base.allow_unsafe_raw_sql Removed
+#### ActiveRecord::Base.allow_unsafe_raw_sql Removed
 
 **What Changed:**
 The `allow_unsafe_raw_sql` configuration has been removed.
@@ -132,7 +156,7 @@ Model.order(Arel.sql("FIELD(id, #{ids.join(',')})"))
 
 ---
 
-#### 6. ActiveModel::Errors API Change
+#### ActiveModel::Errors API Change
 
 **What Changed:**
 `ActiveModel::Errors` now returns `Error` objects instead of strings.
@@ -156,7 +180,7 @@ error.full_message  # Get full message with attribute name
 
 ---
 
-#### 7. find_or_create_by Behavior Change
+#### find_or_create_by Behavior Change
 
 **What Changed:**
 `find_or_create_by` now handles race conditions better, but behavior changed slightly.
@@ -227,10 +251,11 @@ end
 ```
 
 ### Phase 3: Fix Breaking Changes
-1. Review `config_for` usage
-2. Check `respond_to#any` blocks
-3. Test SSL redirects if critical
-4. Update `ActiveModel::Errors` usage
+1. Replace `update_attributes` / `update_attributes!` with `update` / `update!`
+2. Review `config_for` usage
+3. Check `respond_to#any` blocks
+4. Test SSL redirects if critical
+5. Update `ActiveModel::Errors` usage
 
 ### Phase 4: Configuration
 ```bash
@@ -260,38 +285,16 @@ config.load_defaults 6.1
 
 ---
 
-## Common Issues
+## Common Issues — Quick Reference
 
-### Issue: Content-Type Mismatch in API Responses
+Error → section lookup for the most common errors encountered during this upgrade:
 
-**Error:** Client receives `text/html` instead of `application/json`
-
-**Cause:** `respond_to#any` Content-Type change
-
-**Fix:**
-```ruby
-format.json { render json: @data }
-```
-
-### Issue: SSL Redirect Loops with POST Requests
-
-**Cause:** 308 status code preserves method, may confuse some proxies
-
-**Fix:**
-```ruby
-config.ssl_options = { redirect: { status: 301 } }
-```
-
-### Issue: Errors Behave Differently
-
-**Error:** `NoMethodError: undefined method 'include?' for #<ActiveModel::Error>`
-
-**Cause:** Errors are now objects, not strings
-
-**Fix:**
-```ruby
-user.errors.where(:email).map(&:message)
-```
+| Error | See |
+|-------|-----|
+| `NoMethodError: undefined method 'update_attributes'` | "update_attributes Removed": replace with `update` |
+| API client receives `text/html` instead of `application/json` | "respond_to#any Content-Type Change" — `format.json { render json: ... }` |
+| SSL redirect loops on POST requests | "HTTPS Redirects Use 308 Status" — `config.ssl_options = { redirect: { status: 301 } }` if the proxy cannot handle 308 |
+| `NoMethodError: undefined method 'include?' for #<ActiveModel::Error>` | "ActiveModel::Errors API Change" — `errors.where(:email).map(&:message)` |
 
 ---
 

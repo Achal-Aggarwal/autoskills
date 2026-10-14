@@ -1,19 +1,35 @@
 version: "7.0"
 description: "Breaking change patterns for Rails 6.1 → 7.0 upgrade"
 
-breaking_changes:
+upgrade_findings:
   high_priority:
     - name: "Ruby version requirement"
-      pattern: "ruby.*['\"]2\\.[0-6]"
+      kind: "breaking"
+      pattern: "^\\s*(?:ruby\\s*\\(?\\s*[\"'](?:=\\s*|~>\\s*(?=\\d+\\.\\d+\\.\\d))?|ruby-|ruby\\s+)?(?:1\\.\\d+|2\\.[0-6])(?:\\.\\d+)*(?![\\d.])|^\\s*ruby\\s*\\(?\\s*[\"']~>\\s*1\\.\\d+(?![\\d.])"
       exclude: ""
       search_paths:
         - "Gemfile"
         - ".ruby-version"
-      explanation: "Rails 7.0 requires Ruby 2.7.0 or newer"
+        - ".tool-versions"
+      explanation: "Rails 7.0 requires Ruby 2.7.0 or newer. Flags a Ruby below 2.7.0 in .ruby-version or .tool-versions, and a Gemfile `ruby` line that rules it out (an exact version, or a `~>` whose upper bound is below 2.7.0); a requirement that still allows 2.7.0, such as `>=`, is not flagged"
       fix: "Upgrade Ruby to 2.7.0+ (3.0+ recommended)"
       variable_name: "RUBY_VERSION"
 
+    - name: "Explicit format/handler extension in template: or layout:"
+      kind: "breaking"
+      pattern: "(template|layout):\\s*[\"'][^\"']*\\.(html|erb)\\b"
+      exclude: ""
+      search_paths:
+        - "app/controllers/"
+        - "app/mailers/"
+        - "app/views/"
+        - "app/helpers/"
+      explanation: "A call like `render template: \"posts/show.html.erb\"` or `layout: \"pdf.html\"` worked on 6.1 and raises ActionView::MissingTemplate on 7.0. 6.1 tolerated it and warned: action_view/template/resolver.rb#find_template_paths_from_details emitted \"Rendering actions with '.' in the name is deprecated\" whenever the name contained a dot. That code path is gone in 7.0, so the dotted name is taken literally and matches no template. Most commonly hit via wicked_pdf's `render pdf:` helper, which forwards :template/:layout straight through. A related, non-regex-detectable failure mode: if the render call runs inside a non-html respond_to format block (e.g. `format.pdf do render pdf: ... end`) and does not pass an explicit `formats:` option, Rails resolves the template using the block's format (:pdf) instead of :html, and raises MissingTemplate even with a bare template name -- 6.1 fell back to :html here, 7.0 does not. See workflows/07-boot-smoke-test-workflow.md notes: neither this pattern nor the boot smoke test catches the formats: variant because it only manifests when the specific action+format combination is actually invoked, not at boot."
+      fix: "Drop the format/handler extension from the string: template: \"posts/show.html.erb\" -> template: \"posts/show\"; layout: \"pdf.html\" -> layout: \"pdf\". If the render happens inside a non-html format.<x> block, also add formats: [:html] explicitly so template resolution doesn't use the block's format."
+      variable_name: "EXPLICIT_TEMPLATE_EXTENSION"
+
     - name: "Webpacker usage"
+      kind: "migration"
       pattern: "webpacker|javascript_pack_tag"
       exclude: "importmap"
       search_paths:
@@ -24,16 +40,8 @@ breaking_changes:
       fix: "Migrate to Import Maps, esbuild, or rollup. Remove Webpacker."
       variable_name: "WEBPACKER"
 
-    - name: "Spring usage"
-      pattern: "gem ['\"]spring['\"]"
-      exclude: ""
-      search_paths:
-        - "Gemfile"
-      explanation: "Spring is no longer included by default in Rails 7.0"
-      fix: "Keep if needed, or remove for simpler boot process"
-      variable_name: "SPRING"
-
     - name: "form_with local option"
+      kind: "migration"
       pattern: "form_with.*local:\\s*(true|false)"
       exclude: ""
       search_paths:
@@ -42,30 +50,21 @@ breaking_changes:
       fix: "Remove local: true (now default is remote with Turbo). Add data: { turbo: false } if needed."
       variable_name: "FORM_WITH_LOCAL"
 
-    - name: "ActionController::Base.allow_forgery_protection"
-      pattern: "allow_forgery_protection"
-      exclude: ""
-      search_paths:
-        - "config/"
-        - "spec/"
-        - "test/"
-      explanation: "Forgery protection behavior changes in Rails 7.0"
-      fix: "Review CSRF configuration. ensure protect_from_forgery settings are correct"
-      variable_name: "FORGERY_PROTECTION"
-
   medium_priority:
     - name: "secrets.yml usage"
+      kind: "migration"
       pattern: "Rails\\.application\\.secrets"
       exclude: "credentials"
       search_paths:
         - "app/"
         - "lib/"
         - "config/"
-      explanation: "Rails.application.secrets is deprecated in favor of credentials"
-      fix: "Migrate to Rails.application.credentials"
+      explanation: "Rails.application.secrets still works at 7.0 with no deprecation warning; def secrets in railties/lib/rails/application.rb is byte-for-byte identical to 6.1. The runtime API is officially deprecated in 7.1, so migrating to Rails.application.credentials at this hop avoids rework on the next one"
+      fix: "Move values from config/secrets.yml into config/credentials.yml.enc (`rails credentials:edit`), then update readers: Rails.application.secrets.api_key → Rails.application.credentials.api_key. config/master.key must NOT be committed"
       variable_name: "SECRETS_YML"
 
     - name: "ActiveRecord enum prefix/suffix"
+      kind: "migration"
       pattern: "enum.*:.*\\{"
       exclude: ""
       search_paths:
@@ -75,25 +74,28 @@ breaking_changes:
       variable_name: "ENUM_SYNTAX"
 
     - name: "image_tag skip_pipeline"
+      kind: "optional"
       pattern: "image_tag.*skip_pipeline"
       exclude: ""
       search_paths:
         - "app/views/"
         - "app/helpers/"
-      explanation: "image_tag skip_pipeline option removed in Rails 7.0"
-      fix: "Remove skip_pipeline option from image_tag calls"
+      explanation: "skip_pipeline is fully supported at Rails 7.0; image_tag's implementation is byte-for-byte identical to 6.1. The option was actually expanded at 7.0 to also work on stylesheet_link_tag. This entry flags call sites for review when migrating away from Sprockets to Propshaft / Importmap, but the option itself does not change at this hop and existing calls continue to work"
+      fix: "No change required at the 7.0 hop. If you are also migrating off the Sprockets asset pipeline, audit each skip_pipeline call to confirm it is still doing what you intend under the new pipeline; otherwise leave as-is"
       variable_name: "IMAGE_TAG_PIPELINE"
 
     - name: "ActiveStorage variant syntax"
+      kind: "migration"
       pattern: "\\.variant\\(.*resize:"
       exclude: ""
       search_paths:
         - "app/"
-      explanation: "ActiveStorage variant syntax changes in Rails 7.0"
-      fix: "Use new syntax: variant(resize_to_limit: [100, 100])"
+      explanation: "load_defaults 7.0 sets config.active_storage.variant_processor = :vips (railties configuration.rb); below that the processor stays :mini_magick and resize: keeps working with no warning. Under vips, resize: is not an image_processing macro, so it is forwarded to libvips, which does not take an ImageMagick geometry string like \"100x100>\". A named variant declared without parentheses (a.variant :thumb, resize: ...) is missed"
+      fix: "Rewrite with the image_processing macros, which work on both processors and both Rails versions: variant(resize_to_limit: [100, 100]), variant(resize_to_fill: [100, 100]). Or keep ImageMagick after load_defaults 7.0 with config.active_storage.variant_processor = :mini_magick"
       variable_name: "ACTIVE_STORAGE_VARIANT"
 
     - name: "Turbolinks"
+      kind: "migration"
       pattern: "turbolinks|Turbolinks"
       exclude: ""
       search_paths:
@@ -105,6 +107,7 @@ breaking_changes:
       variable_name: "TURBOLINKS"
 
     - name: "UJS (rails-ujs)"
+      kind: "migration"
       pattern: "rails-ujs|@rails/ujs"
       exclude: ""
       search_paths:
@@ -115,7 +118,20 @@ breaking_changes:
       fix: "Remove rails-ujs. Use Turbo for remote forms and Stimulus for JavaScript."
       variable_name: "RAILS_UJS"
 
+    - name: "redirect_to open redirect protection"
+      kind: "breaking"
+      pattern: "redirect_(to|back_or_to)\\s+(params\\[|session\\[|request\\.refer|[\"'][^\"']*(https?://|#\\{))"
+      exclude: "allow_other_host"
+      search_paths:
+        - "app/controllers/"
+        - "app/"
+        - "lib/"
+      explanation: "load_defaults 7.0 sets config.action_controller.raise_on_open_redirects = true. With it on, redirect_to and redirect_back_or_to to a host different from the current one raise ActionController::Redirecting::UnsafeRedirectError instead of redirecting. This is not a deprecation and there is no warning phase; it is gated by load_defaults 7.0, so apps only see it once they bump load_defaults to 7.0 (which is why it often surfaces during a later hop). Redirects to dynamic or external destinations (params, session, request.referer, or a literal/interpolated URL) are the ones that break; redirects to path helpers and model records are unaffected"
+      fix: "For each intentional external redirect, pass allow_other_host: true, e.g. redirect_to \"https://example.com\", allow_other_host: true. Never pass allow_other_host: true on a destination built from untrusted input (params, session, request.referer) without validating it against an allowlist first, or the open-redirect protection is defeated. If a redirect target is internal, rewrite it as a path/url helper so it passes without the flag"
+      variable_name: "OPEN_REDIRECT_PROTECTION"
+
     - name: "to_s(:format) deprecation"
+      kind: "deprecation"
       pattern: "\\.to_s\\(:"
       exclude: ""
       search_paths:
@@ -124,6 +140,27 @@ breaking_changes:
       explanation: "to_s(:format) is deprecated in favor of to_fs(:format)"
       fix: "Replace to_s(:format) with to_fs(:format)"
       variable_name: "TO_S_FORMAT"
+
+  low_priority:
+    - name: "Spring usage"
+      kind: "optional"
+      pattern: "gem ['\"]spring['\"]"
+      exclude: "\\A\\s*#"
+      search_paths:
+        - "Gemfile"
+      explanation: "Rails 7.0 no longer adds spring to new apps (the Gemfile template only has it commented out). An app that keeps it needs spring 4.0 or later: 4.0.0 is the first release whose README lists Rails 7.0, and spring 3.x README stops at 6.0"
+      fix: "Remove spring and bin/spring if the team does not rely on it, or bump to gem \"spring\", \">= 4.0\" (needs Rails 6.0 or later, so it runs on both sides of the dual boot)"
+      variable_name: "SPRING"
+
+    - name: "config.action_controller.urlsafe_csrf_tokens set explicitly"
+      kind: "deprecation"
+      pattern: "\\burlsafe_csrf_tokens\\s*="
+      exclude: "\\A\\s*#"
+      search_paths:
+        - "config/"
+      explanation: "Rails 7.0 makes URL-safe CSRF tokens the only default (actionpack 7.0 sets urlsafe_csrf_tokens = true) and deprecates the setting: assigning it warns \"URL-safe CSRF tokens are now the default. Use 6.1 defaults or above.\" for true and \"Non-URL-safe CSRF tokens are deprecated. Use 6.1 defaults or above.\" for false. Rails 7.1 removes the setting. An app on load_defaults below 6.1 gets the second warning with no line of its own, because load_defaults 5.0 sets it to false; this pattern only finds an explicit assignment. Tokens keep working across a rolling deploy: 7.0 still decodes the standard base64 tokens 6.1 issued"
+      fix: "Delete the line on the Rails 7.0 side: `config.action_controller.urlsafe_csrf_tokens = true unless NextRails.next?` keeps it for the 6.1 side only. If the app is on load_defaults below 6.1, move to 6.1 defaults or above, which stops setting it to false"
+      variable_name: "URLSAFE_CSRF_TOKENS"
 
 dependencies:
   importmap:

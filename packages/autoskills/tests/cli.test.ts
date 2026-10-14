@@ -26,6 +26,8 @@ describe("CLI", () => {
     ok(output.includes("--clear-cache"));
     ok(output.includes("--yes"));
     ok(output.includes("--agent"));
+    ok(output.includes("autoskills ui"));
+    ok(output.includes("--no-open"));
   });
 
   it("shows help with -h", () => {
@@ -233,7 +235,7 @@ describe("CLI", () => {
       const output = run(["--dry-run"], tmp.path);
       ok(output.includes("Cloudflare Agents"));
       ok(output.includes("agents-sdk"));
-      ok(output.includes("sandbox-sdk"));
+      ok(output.includes("sandbox-stable"));
     });
 
     it("detects Cloudflare + Vite combo for vinext", () => {
@@ -291,7 +293,7 @@ describe("CLI", () => {
       writeFile(tmp.path, "deno.json", "{}");
       const output = run(["--dry-run"], tmp.path);
       ok(output.includes("Deno"));
-      ok(output.includes("deno-expert"));
+      ok(/› deno(?![\w-])/.test(output));
       ok(output.includes("deno-typescript"));
     });
 

@@ -19,10 +19,24 @@ Rails 7.0 is a major release focused on frontend modernization:
 
 ### 🔴 HIGH PRIORITY
 
-#### 1. Ruby 2.7+ Required
+#### Ruby 2.7+ Required
+
+**Pattern:** `RUBY_VERSION`
 
 **What Changed:**
-Rails 7.0 requires Ruby 2.7.0 or newer. Ruby 3.0+ is recommended.
+Rails 7.0 requires Ruby 2.7.0 or newer: the `rails` 7.0 gemspec sets `required_ruby_version >= 2.7.0`, while 6.1 accepts `>= 2.5.0`. Bundler refuses to install 7.0 on an older Ruby, so upgrade Ruby first, while the app is still on Rails 6.1, as its own deploy. Rails 7.0.0 itself needs Ruby below 3.1 ([FastRuby.io compatibility table](https://www.fastruby.io/blog/ruby/rails/versions/compatibility-table.html)); on Ruby 3.1 or newer, use 7.0.1 or a later 7.0 patch. The gemspec sets no upper bound; a Ruby released after a Rails version may need that version's latest patch release.
+
+**Detection Pattern:**
+```ruby
+# Gemfile
+ruby "2.6.10"
+
+# .ruby-version
+2.6.10
+
+# .tool-versions
+ruby 2.6.10
+```
 
 **Fix:**
 ```bash
@@ -33,7 +47,9 @@ rbenv local 3.1.4
 
 ---
 
-#### 2. Webpacker → Import Maps / jsbundling-rails
+#### Webpacker → Import Maps / jsbundling-rails
+
+**Pattern:** `WEBPACKER`
 
 **What Changed:**
 Webpacker is no longer the default. Choose:
@@ -80,7 +96,9 @@ rails javascript:install:esbuild
 
 ---
 
-#### 3. Turbolinks → Turbo
+#### Turbolinks → Turbo
+
+**Pattern:** `TURBOLINKS`
 
 **What Changed:**
 Turbolinks is replaced by Turbo (part of Hotwire).
@@ -134,7 +152,9 @@ document.addEventListener('turbo:load', function() {
 
 ---
 
-#### 4. Rails UJS → Turbo / Stimulus
+#### Rails UJS → Turbo / Stimulus
+
+**Pattern:** `RAILS_UJS`
 
 **What Changed:**
 `rails-ujs` functionality is now handled by Turbo and Stimulus.
@@ -172,7 +192,12 @@ Rails.start()
 
 ---
 
-#### 5. form_with Remote Behavior Change
+Remove `@rails/ujs` (and `rails-ujs`) completely once Turbo is in; with both loaded, forms submit twice.
+
+
+#### form_with Remote Behavior Change
+
+**Pattern:** `FORM_WITH_LOCAL`
 
 **What Changed:**
 `form_with` now submits forms with Turbo (remote by default).
@@ -198,7 +223,9 @@ Rails.start()
 
 ### 🟡 MEDIUM PRIORITY
 
-#### 6. secrets.yml → credentials
+#### secrets.yml → credentials
+
+**Pattern:** `SECRETS_YML`
 
 **What Changed:**
 `Rails.application.secrets` is deprecated.
@@ -231,7 +258,9 @@ rails credentials:edit --environment production
 
 ---
 
-#### 7. Enum Syntax Changes
+#### Enum Syntax Changes
+
+**Pattern:** `ENUM_SYNTAX`
 
 **What Changed:**
 New enum syntax available (hash form preferred).
@@ -250,7 +279,9 @@ enum :status, { draft: 0, published: 1 }, prefix: true
 
 ---
 
-#### 8. image_tag skip_pipeline Removed
+#### image_tag skip_pipeline Removed
+
+**Pattern:** `IMAGE_TAG_PIPELINE`
 
 **What Changed:**
 `skip_pipeline` option removed from `image_tag`.
@@ -266,7 +297,9 @@ enum :status, { draft: 0, published: 1 }, prefix: true
 
 ---
 
-#### 9. to_s(:format) Deprecated
+#### to_s(:format) Deprecated
+
+**Pattern:** `TO_S_FORMAT`
 
 **What Changed:**
 `to_s(:format)` is deprecated in favor of `to_fs(:format)`.
@@ -285,6 +318,162 @@ Date.today.to_s(:short)
 # AFTER
 Date.today.to_fs(:short)
 ```
+
+---
+
+#### redirect_to Open Redirect Protection
+
+**Pattern:** `OPEN_REDIRECT_PROTECTION`
+
+**What Changed:**
+`load_defaults 7.0` sets `config.action_controller.raise_on_open_redirects = true`. With it on, `redirect_to` and `redirect_back_or_to` to a host different from the current one raise `ActionController::Redirecting::UnsafeRedirectError` instead of redirecting. This is not a deprecation, there is no warning phase, and it is gated by `load_defaults 7.0`, so an app only sees it once `load_defaults` reaches 7.0, which is often a later hop than the Rails 7.0 bump itself. Internal path/url helpers and model records are unaffected; only dynamic or external destinations break.
+
+**Detection Pattern:**
+```ruby
+redirect_to params[:return_to]
+redirect_back_or_to session[:forward_url]
+redirect_to request.referer
+redirect_to "https://example.com"
+```
+
+**Fix:**
+```ruby
+# BEFORE (raises UnsafeRedirectError under load_defaults 7.0)
+redirect_to "https://example.com"
+
+# AFTER: allow the external host explicitly
+redirect_to "https://example.com", allow_other_host: true
+```
+
+For destinations built from untrusted input, validate against an allowlist before allowing the external host. Passing `allow_other_host: true` on a raw `params`/`session`/`request.referer` value defeats the protection:
+
+```ruby
+# BEFORE (open redirect vulnerability if left unchecked)
+redirect_to params[:return_to]
+
+# AFTER: keep it internal, or validate before allowing other hosts
+redirect_to params[:return_to], allow_other_host: false
+# or rewrite an internal target as a path helper so no flag is needed
+redirect_to safe_path_for(params[:return_to])
+```
+
+If you are not ready to audit every call site at this hop, you can keep the old behavior by leaving `config.action_controller.raise_on_open_redirects = false` in `config/application.rb`, then adopt it later. See the `rails-load-defaults` skill for the incremental `load_defaults` walkthrough.
+
+---
+
+#### Explicit Format/Handler Extension in `template:` / `layout:`
+
+**Pattern:** `EXPLICIT_TEMPLATE_EXTENSION`
+
+**What Changed:**
+Passing a template name containing a `.` — `render template: "posts/show.html.erb"`, `layout: "pdf.html"` — worked on 6.1 and raises `ActionView::MissingTemplate` on 7.0.
+
+6.1 tolerated it and said so: `actionview/lib/action_view/template/resolver.rb` warned `"Rendering actions with '.' in the name is deprecated"` from `find_template_paths_from_details`. That code path is gone in 7.0, so the dotted name is now taken literally and matches no template.
+
+Most commonly hit through `wicked_pdf`'s `render pdf:` helper, which forwards `:template` / `:layout` straight through.
+
+**Detection Pattern:**
+```ruby
+render template: "posts/show.html.erb"
+render pdf: "report", template: "reports/show.html.erb", layout: "pdf.html"
+```
+
+**Fix:**
+```ruby
+# BEFORE
+render template: "posts/show.html.erb"
+render pdf: "report", layout: "pdf.html"
+
+# AFTER
+render template: "posts/show"
+render pdf: "report", layout: "pdf"
+```
+
+**A sibling bug the regex cannot find.** If the render runs inside a non-html `respond_to` block and passes no explicit `formats:`, 7.0 resolves the template using the *block's* format instead of `:html` and raises `MissingTemplate` even with a bare template name. 6.1 fell back to `:html` here; 7.0 does not.
+
+```ruby
+respond_to do |format|
+  format.pdf { render pdf: "report", template: "reports/show", formats: [:html] }
+end
+```
+
+Neither a boot smoke test nor a green suite catches this one: it only manifests when that specific action + format combination is actually invoked. Exercise every non-`format.html` branch by hand or add a spec for it.
+
+---
+
+#### Active Storage `variant(resize:)` Under vips
+
+**Pattern:** `ACTIVE_STORAGE_VARIANT`
+
+**What Changed:**
+`load_defaults 7.0` sets `config.active_storage.variant_processor = :vips`; below that the processor stays `:mini_magick`. `resize:` is not one of the image_processing macros, so under vips it is passed straight to libvips, which does not understand ImageMagick geometry strings like `"100x100>"`. Variants that worked on 6.1 then fail when they are generated.
+
+**Detection Pattern:**
+```ruby
+user.avatar.variant(resize: "100x100>")
+```
+
+**Fix:**
+```ruby
+# BEFORE
+user.avatar.variant(resize: "100x100>")
+
+# AFTER
+user.avatar.variant(resize_to_limit: [100, 100])
+```
+The AFTER works on 6.1 too, with either processor. To keep ImageMagick after `load_defaults 7.0` instead, set `config.active_storage.variant_processor = :mini_magick`.
+
+---
+
+### 🟢 LOW PRIORITY
+
+#### Spring Dropped From New Apps
+
+**Pattern:** `SPRING`
+
+**What Changed:**
+The 7.0 app template leaves `gem "spring"` commented out, so new apps no longer get it. An app that keeps Spring needs spring 4.0 or later: 4.0.0 is the first release whose README lists Rails 7.0 (3.x stops at 6.0), and it requires Rails 6.0 or later.
+
+**Detection Pattern:**
+```ruby
+gem "spring"
+```
+
+**Fix:**
+```ruby
+# BEFORE (Gemfile)
+gem "spring", "~> 2.1"
+
+# AFTER: bump it, or remove spring and bin/spring
+gem "spring", ">= 4.0"
+```
+The AFTER works on 6.1 as well, so no `NextRails.next?` branch is needed. Spring 3.0 and later raise unless `config.cache_classes = false` in each environment Spring runs.
+
+---
+
+#### `urlsafe_csrf_tokens` Setting Deprecated
+
+**Pattern:** `URLSAFE_CSRF_TOKENS`
+
+**What Changed:**
+Rails 7.0 makes URL-safe CSRF tokens the default and deprecates `config.action_controller.urlsafe_csrf_tokens`: assigning it warns for `true` ("URL-safe CSRF tokens are now the default") and for `false` ("Non-URL-safe CSRF tokens are deprecated"). An app on `load_defaults` below 6.1 gets the `false` warning with no line of its own, because `load_defaults 5.0` sets it. Rails 7.1 removes the setting. Nothing breaks during a rolling deploy: 7.0 still decodes the tokens a 6.1 server issued.
+
+**Detection Pattern:**
+```ruby
+# config/application.rb or config/initializers/new_framework_defaults_6_1.rb
+config.action_controller.urlsafe_csrf_tokens = true
+```
+
+**Fix:**
+```ruby
+# BEFORE
+config.action_controller.urlsafe_csrf_tokens = true
+
+# AFTER (keep it on the 6.1 side only)
+config.action_controller.urlsafe_csrf_tokens = true unless NextRails.next?
+```
+
+On `load_defaults` below 6.1, moving to 6.1 defaults or above also stops the warning.
 
 ---
 
@@ -358,33 +547,17 @@ config.load_defaults 7.0
 
 ---
 
-## Common Issues
+## Common Issues — Quick Reference
 
-### Issue: Links with method: :delete Don't Work
+Error → section lookup for the most common errors encountered during this upgrade:
 
-**Error:** GET request instead of DELETE
-
-**Cause:** Turbo requires button_to or data-turbo-method
-
-**Fix:**
-```erb
-<%= button_to 'Delete', item, method: :delete %>
-```
-
-### Issue: Forms Submit Twice
-
-**Cause:** Both UJS and Turbo handling forms
-
-**Fix:** Remove rails-ujs completely
-
-### Issue: JavaScript Not Loading
-
-**Cause:** Import Maps not configured
-
-**Fix:**
-```erb
-<%= javascript_importmap_tags %>
-```
+| Error | See |
+|-------|-----|
+| `ActionView::MissingTemplate` on an action that worked on 6.1 | "Explicit Format/Handler Extension in `template:` / `layout:`" — drop the `.html.erb` extension, pass `formats: [:html]` in non-html branches |
+| `method: :delete` links send GET | "Rails UJS → Turbo / Stimulus" — `button_to` or `data-turbo-method` |
+| Forms submit twice | "Rails UJS → Turbo / Stimulus" — remove rails-ujs completely |
+| JavaScript not loading | "Webpacker → Import Maps / jsbundling-rails" — `<%= javascript_importmap_tags %>` |
+| Variant images fail to generate after `load_defaults 7.0` | "Active Storage `variant(resize:)` Under vips" — use `resize_to_limit:` / `resize_to_fill:` |
 
 ---
 
